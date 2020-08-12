@@ -120,7 +120,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         print('excepted') #REGENERATE THE CONNECTION 
         i = (current_process()._identity[0]-1) % len(connections)
         tc = init_connection(i,real=False)[1]
-        tc.getResult()
+        #tc.getResult()
         connections[i] = tc
         return log_likelihood(theta)
     
@@ -171,7 +171,7 @@ realdata, _ = init_connection(-9,debug=debug)
 connections = []
 for i in range(nwalkers*2):
     tc = init_connection(i,real=False,debug=debug)[1]
-    tc.getResult()
+    #tc.getResult()
     connections.append(tc)
 ########################################################
 
