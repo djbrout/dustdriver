@@ -8,5 +8,6 @@
 
 `slurm.job` - job submission script
 
-Currently I have an environment called "dillon" which has `corner.py` installed... can change to whatever...
-
+Currently I have an environment called "dillon" which has `corner.py` installed... 
+to create an analogous env, run the following
+`conda env create --file dillon.yml`
