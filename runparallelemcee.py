@@ -178,7 +178,7 @@ for i in range(nwalkers*2):
 
 if debug:
     #just run once through the likelihood with some parameters
-    print(log_likelihood((.1,.1,.1,connection=connections[-1])))
+    print(log_likelihood((.1,.1,.1),connection=connections[-1]))
     asdf
 
 with Pool() as pool:
