@@ -15,6 +15,7 @@ class SALT2mu:
         self.debug=debug
         self.ready = 'Enter expected ITERATION number'
         self.ready2 = 'ITERATION=%d'
+        self.done = 'Graceful Program Exit. Bye.'
         self.initready = 'Finished SUBPROCESS_INIT'
         self.crosstalkfile = open(mapsout,'w')
         self.SALT2muoutputs = open(SALT2muout,'r')
@@ -51,6 +52,8 @@ class SALT2mu:
         start = False
         for stdout_line in self.stdout_iterator:
             if self.debug: print(stdout_line)
+            if str(self.done) in stdout_line:
+                return
             #if str(self.ready) in stdout_line:
             if self.iter == -1:
                 if str(self.ready) in stdout_line:

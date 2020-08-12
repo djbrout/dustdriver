@@ -60,7 +60,8 @@ def init_connection(index,real=True,debug=False):
             mapsout,simdataout,subprocess_log_sim)
 
 
-    connection.getResult()
+    if not real: 
+        connection.getResult()
 
     return realdata, connection
 
