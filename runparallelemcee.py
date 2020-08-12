@@ -78,7 +78,7 @@ def connection_next(connection):
 
 #####################################################################################################################
 #####################################################################################################################
-
+################################ SCIENCE STARTS HERE ################################################################
 
 def normhisttodata(datacount,simcount):
     #Helper function to 
@@ -99,29 +99,29 @@ def normhisttodata(datacount,simcount):
 carr = np.arange(-.5,.5,.001)#these are fixed so can be defined globally
 xarr = np.arange(-5,5,.01)
 
+##########################################################################################################################
 def log_likelihood(theta,connection=False,returnall=False,pid=0):
     #c,cl,cr,x,xl,xr = theta
     c,cl,cr = theta
     try:
-        if connection == False:
+        if connection == False: #THIS IS FOR DEBUG/STANDALONE MODE
             connection = connections[(current_process()._identity[0]-1) % len(connections)]
 
         connection = connection_prepare(connection)
         connection.write_1D_PDF('SIM_c',c,cl,cr,carr)
         #connection.write_1D_PDF('SIM_x1',x,xl,xr,xarr) #THIS IS WHERE TO ADD MORE PARAMETERS
-        connection = connection_next(connection)    
+        connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions
 
         if np.isnan(connection.beta):
             return -np.inf
 
-        cbindf = connection.cbindf
-        realcbindf = realdata.cbindf
+        cbindf = connection.cbindf #THIS IS THE PANDAS DATAFRAME OF THE OUTPUT FROM SALT2mu
+        realcbindf = realdata.cbindf #same for the real data (was a global variable)
     
     except BrokenPipeError:
         print('excepted') #REGENERATE THE CONNECTION 
         i = (current_process()._identity[0]-1) % len(connections)
         tc = init_connection(i,real=False)[1]
-        #tc.getResult()
         connections[i] = tc
         return log_likelihood(theta)
     
@@ -131,7 +131,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
          return -0.5 * np.sum((datacount - simcount) ** 2 / poisson**2),datacount,simcount,cbindf['c'][ww],poisson
 
     return -0.5 * np.sum((datacount - simcount) ** 2 / poisson**2)
-
+###########################################################################################################################
 
 def log_prior(theta):
     c,cl,cr = theta
@@ -172,15 +172,14 @@ realdata, _ = init_connection(-9,debug=debug)
 connections = []
 for i in range(nwalkers*2):
     tc = init_connection(i,real=False,debug=debug)[1]
-    #tc.getResult()
     connections.append(tc)
 ########################################################
 
 
-if debug:
+if debug: ##### --debug
     #just run once through the likelihood with some parameters
     print(log_likelihood((.1,.1,.1),connection=connections[-1]))
-    asdf
+    abort
 
 with Pool() as pool:
     #Instantiate the sampler once (in parallel)
