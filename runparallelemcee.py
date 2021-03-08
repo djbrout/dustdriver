@@ -276,6 +276,7 @@ with Pool() as pool: #this is where Brodie comes in to get mc running in paralle
         plt.errorbar(realdata.cbindf['c'],realdata.cbindf['NEVT'],yerr=np.sqrt(realdata.cbindf['NEVT']),fmt='o',c='k',label='REAL DATA')   
         len2 = len(flat_samples)
         theta = np.mean(flat_samples[int(len2/2):,:],axis=0)
+        theta = np.mean(samples[-1,:,:])
         tc = init_connection(i*100,real=False,debug=True)[1]
         chisq,data,simcount,simc,err = log_likelihood((theta[0],theta[1],theta[2]),returnall=True,connection=tc)
         plt.plot(simc,simcount,c='darkgreen',label='SIMULATION')
