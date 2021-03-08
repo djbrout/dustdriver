@@ -15,12 +15,16 @@ import os
 import corner
 from multiprocessing import Pool
 from multiprocessing import current_process
+from multiprocessing import cpu_count
 import emcee
+import time 
 
-
+resume = False
 debug = False
 if '--debug' in sys.argv:
     debug = True
+if '--resume' in sys.argv:
+    resume = True
 
 os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in emcee
 
@@ -37,42 +41,44 @@ def init_connection(index,real=True,debug=False):
     subprocess_log_sim = 'parallel/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()
 
     if debug:
-        if real: 
+        if real:
             realdata = callSALT2mu.SALT2mu(
-                '/project2/rkessler/PRODUCTS/SNANA_DEBUG/SNANA/bin/SALT2mu.exe SALT2mu_BS20_REALDATA_ALL_nolowz.input SUBPROCESS_FILES=%s,%s,%s','NOTHING.DAT',
+                'SALT2mu.exe SALT2mu_BS20_REALDATA_ALL_nolowz.input SUBPROCESS_FILES=%s,%s,%s','NOTHING.DAT',
                 realdataout,subprocess_log_data,realdata=True,debug=True)
         else:
-            realdata = -9
+            realdata = 0
 
         connection = callSALT2mu.SALT2mu(
-            '/project2/rkessler/PRODUCTS/SNANA_DEBUG/SNANA/bin/SALT2mu.exe SALT2mu_DESNN_SIM_nolowz.input SUBPROCESS_FILES=%s,%s,%s SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,HOST_LOGMASS',
+            'SALT2mu.exe SALT2mu_DESNN_SIM_nolowz.input SUBPROCESS_FILES=%s,%s,%s SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,HOST_LOGMASS',
             mapsout,simdataout,subprocess_log_sim,debug=True)
     else:
-        if real:
+        if real: #Will always run SALT2mu on real data the first time through. Redoes RUNTEST_SUBPROCESS_BS20DATA 
             realdata = callSALT2mu.SALT2mu(
                 'SALT2mu.exe SALT2mu_BS20_REALDATA_ALL_nolowz.input SUBPROCESS_FILES=%s,%s,%s','NOTHING.DAT',
                 realdataout,subprocess_log_data,realdata=True)
         else:
-            realdata = -9
-
-        connection = callSALT2mu.SALT2mu(
+            realdata = 0
+#Then calls it on the simulation. Redoes RUNTEST_SUBPROCESS_SIM, essentially.
+        connection = callSALT2mu.SALT2mu( 
             'SALT2mu.exe SALT2mu_DESNN_SIM_nolowz.input SUBPROCESS_FILES=%s,%s,%s SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,HOST_LOGMASS',
             mapsout,simdataout,subprocess_log_sim)
 
 
-    if not real: 
-        connection.getResult()
+    if not real: #connection is an object that is equal to SUBPROCESS_SIM/DATA
+        connection.getResult() #Gets result, as it were
 
     return realdata, connection
 
-def connection_prepare(connection):
-    connection.iter+=1
-    connection.write_iterbegin()
+def connection_prepare(connection): #probably works. Iteration issues, needs to line up with SALT2mu and such. 
+    connection.iter+=1 #tick up iteration by one 
+    connection.write_iterbegin() #open SOMETHING.DAT for that iteration
     return connection
 
-def connection_next(connection):
+def connection_next(connection): #Happens at the end of each iteration. 
     connection.write_iterend()
+    print('wrote end')
     connection.next()
+    print('submitted next iter')
     connection.getResult()
     return connection
 
@@ -91,6 +97,7 @@ def normhisttodata(datacount,simcount):
     ww = (datacount > 0) | (simcount>0)
 
     poisson = np.sqrt(datacount)
+    poisson[datacount == 0] = 1 
     poisson[~np.isfinite(poisson)] = 1
 
     return datacount[ww],simcount[ww],poisson[ww],ww
@@ -101,17 +108,21 @@ xarr = np.arange(-5,5,.01)
 
 ##########################################################################################################################
 def log_likelihood(theta,connection=False,returnall=False,pid=0):
+    print('inside loglike')
     #c,cl,cr,x,xl,xr = theta
     c,cl,cr = theta
     try:
-        if connection == False: #THIS IS FOR DEBUG/STANDALONE MODE
-            connection = connections[(current_process()._identity[0]-1) % len(connections)]
+        if connection == False: #For MCMC running, will pick up a connection
+            connection = connections[(current_process()._identity[0]-1) % len(connections)] 
+            print('here1')
 
-        connection = connection_prepare(connection)
-        connection.write_1D_PDF('SIM_c',c,cl,cr,carr)
+        connection = connection_prepare(connection) #cycle iteration, open SOMETHING.DAT
+        print('writing 1d pdf')
+        connection.write_1D_PDF('SIM_c',c,cl,cr,carr) #This writes SOMETHING.DAT
         #connection.write_1D_PDF('SIM_x1',x,xl,xr,xarr) #THIS IS WHERE TO ADD MORE PARAMETERS
-        connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions
-
+        print('next')
+        connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions 
+        print('got result')
         if np.isnan(connection.beta):
             return -np.inf
 
@@ -135,9 +146,10 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
 
 def log_prior(theta):
     c,cl,cr = theta
-    if -0.15 < c < 0.1 and 0.0 < cl < 0.2 and 0.0 < cr < 0.2:
+    if -0.15 < c <= 0.1 and 0.0 < cl < 0.2 and 0.0 < cr < 0.2:
         return 0.0
-    return -np.inf
+    else:
+        return -np.inf
 
 
 def log_probability(theta):
@@ -148,7 +160,6 @@ def log_probability(theta):
 
 
 
-
 ###################################################################################################
 ###################################################################################################
 ######## This is where things start running #######################################################
@@ -156,47 +167,60 @@ def log_probability(theta):
 
 
 ##### INITIALIZE PARAMETERS (just 3 color parameters so far) ##########
-pos = np.abs(1e-3 * np.random.randn(6, 3))
+pos = np.abs(0.001 * np.random.randn(6, 3))
 pos[:,0]+= -0.03
 pos[:,1]+= .044
 pos[:,2]+= .044
 nwalkers, ndim = pos.shape
+
+if resume == True: #This needs to be generalised to more than just a 6x3 grid, but it works for now
+    past_results = np.load("samples.npz")
+    pos[:,0] = np.random.normal(past_results.f.arr_0[-1,:,0], 0.05) #mean
+    pos[:,1] = np.random.normal(past_results.f.arr_0[-1,:,1], 0.05) #cl
+    pos[:,2] = np.random.normal(past_results.f.arr_0[-1,:,2], 0.05) #cr
+
 #######################################################################
-
-
 ##### Run SALT2mu on the real data once! ################
-realdata, _ = init_connection(-9,debug=debug)
+realdata, _ = init_connection(0,debug=debug)
 #########################################################
 
 #### Open a bunch of parallel connections to SALT2mu ### 
+print(nwalkers)
 connections = []
-for i in range(nwalkers*2):
+if debug: nwalkers = .5
+else: pass
+for i in range(int(nwalkers*2)): #set this back to nwalkers*2 at some point
     tc = init_connection(i,real=False,debug=debug)[1]
     connections.append(tc)
 ########################################################
 
-
 if debug: ##### --debug
     #just run once through the likelihood with some parameters
-    print(log_likelihood((.1,.1,.1),connection=connections[-1]))
+    print(log_likelihood((.1,.1,.1),connection=connections[-1],returnall=True))
     abort
 
-with Pool() as pool:
+with Pool() as pool: #this is where Brodie comes in to get mc running in parallel on batch jobs. 
     #Instantiate the sampler once (in parallel)
     sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, pool=pool)
 
     for i in range(200):
-        print('begun')
-        
+        print("Starting loop iteration", i)
+        print('begun', cpu_count(), "CPUs")
+        sys.stdout.flush()
         #Run the sampler
-        sampler.run_mcmc(pos, 20, progress=True);
+        starttime = time.time()
+        sampler.run_mcmc(pos, 20, progress=True) #There used to be a semicolon here for some reason 
+        #May need to implement a proper burn-in 
+        endtime = time.time()
+        multi_time = endtime - starttime 
+        print("Multiprocessing took {0:.1f} seconds".format(multi_time))
+        sys.stdout.flush() 
 
         #Save the output for later
         samples = sampler.get_chain()
         pos = samples[-1,:,:]
-        np.savez('samples.npz',samples=samples)
-
-
+        np.savez('samples.npz',samples)
+        print(pos, "New samples as input for next run")
 
         ### THATS IT! (below is just plotting to monitor the fitting) ##########
         ########################################################################
@@ -208,17 +232,17 @@ with Pool() as pool:
         fig, axes = plt.subplots(3, figsize=(10, 7), sharex=True)
         samples = sampler.get_chain()
         labels = ["cmean", "csigma-", "csigma+"]
-        for i in range(ndim):
-            ax = axes[i]
-            ax.plot(samples[:, :, i], "k", alpha=0.3)
+        for it in range(ndim):
+            ax = axes[it]
+            ax.plot(samples[:, :, it], "k", alpha=0.3)
             ax.set_xlim(0, len(samples))
-            ax.set_ylabel(labels[i])
+            ax.set_ylabel(labels[it])
             ax.yaxis.set_label_coords(-0.1, 0.5)
 
         axes[-1].set_xlabel("step number");
         plt.savefig('figures/chains.png')
         print('upload figures/chains.png')
-
+        plt.close()
 
         flat_samples = sampler.get_chain(discard=10, flat=True)
 
@@ -228,7 +252,7 @@ with Pool() as pool:
         );
         plt.savefig('figures/corner.png')
         print('upload figures/corner.png')
-
+        plt.close()
 
         plt.clf()
         xr = np.arange(-.3,.3,.001)
@@ -246,12 +270,12 @@ with Pool() as pool:
         plt.xlabel("Parent Color")
         plt.savefig('figures/overplotmodel.png')
         print('upload figures/overplotmodel.png')
-
+        plt.close()
 
         plt.clf()
         plt.errorbar(realdata.cbindf['c'],realdata.cbindf['NEVT'],yerr=np.sqrt(realdata.cbindf['NEVT']),fmt='o',c='k',label='REAL DATA')   
-        len = len(flat_samples)
-        theta = np.mean(flat_samples[int(len/2):,:],axis=0)
+        len2 = len(flat_samples)
+        theta = np.mean(flat_samples[int(len2/2):,:],axis=0)
         tc = init_connection(i*100,real=False,debug=True)[1]
         chisq,data,simcount,simc,err = log_likelihood((theta[0],theta[1],theta[2]),returnall=True,connection=tc)
         plt.plot(simc,simcount,c='darkgreen',label='SIMULATION')
@@ -260,3 +284,4 @@ with Pool() as pool:
         plt.xlabel("Observed Color")
         plt.savefig('figures/overplot_observed_DATA_SIM.png')
         print('upload figures/overplot_observed_DATA_SIM.png')
+        plt.close()

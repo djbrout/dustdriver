@@ -5,8 +5,8 @@
 #SBATCH --ntasks-per-node=14
 #SBATCH --array=1-1
 #SBATCH --cpus-per-task=1
-#SBATCH --partition=broadwl
-#SBATCH --output=/project2/rkessler/PRODUCTS/SNANA_DEBUG/SALT2mu_SUBPROCESS/fitter.log
+#SBATCH --partition=broadwl-lc
+#SBATCH --output=/project2/rkessler/SURVEYS/DES/USERS/djbrout/dustdriver/fitter.log
 #SBATCH --account=pi-rkessler
 #SBATCH --mem=40GB
 
@@ -17,7 +17,7 @@ module load intelmpi/5.1+intel-16.0
 module load cfitsio/3
 module load mkl
 
-source activate dillon
+#conda activate BS20
 
-cd /project2/rkessler/PRODUCTS/SNANA_DEBUG/SALT2mu_SUBPROCESS/
-python runparallelemcee.py 
+cd /project2/rkessler/SURVEYS/DES/USERS/djbrout/dustdriver/
+python runparallelemcee.py --resume

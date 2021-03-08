@@ -21,8 +21,10 @@ class SALT2mu:
         self.SALT2muoutputs = open(SALT2muout,'r')
         if realdata:
             os.system(command%(mapsout,SALT2muout,log))
+            #print(command%(mapsout,SALT2muout,log)) 
             self.getData()
         else:
+            #print(command%(mapsout,SALT2muout,log))
             self.process = subprocess.Popen((command%(mapsout,SALT2muout,log)).split(), 
                                stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE,
@@ -41,6 +43,7 @@ class SALT2mu:
     #    return self.data
 
     def next(self):
+        print('writing next iter to stdin')
         self.process.stdin.write('%d\n'%self.iter)  
         
     def quit(self):
@@ -50,6 +53,8 @@ class SALT2mu:
 
     def getResult(self):
         start = False
+        self.stdout_iterator = iter(self.process.stdout.readline, "")
+        #print(self.stdout_iterator)
         for stdout_line in self.stdout_iterator:
             if self.debug: print(stdout_line)
             if str(self.done) in stdout_line:
@@ -62,13 +67,14 @@ class SALT2mu:
             else:
                 #if self.ready2%(self.iter-1) in stdout_line:
                 if str(self.ready) in stdout_line:
-                    #print('getting data')
+                    print('getting data')
                     self.data = self.getData()                
                     return 
 
     def getData(self):
         self.SALT2muoutputs.seek(0)
         text = self.SALT2muoutputs.read()
+        print(text)
         self.alpha = float(text.split('alpha0')[1].split()[1])
         self.alphaerr = float(text.split('alpha0')[1].split()[3])
         self.beta = float(text.split('beta0')[1].split()[1])
