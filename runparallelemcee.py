@@ -137,7 +137,8 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         return log_likelihood(theta)
     
     datacount,simcount,poisson,ww = normhisttodata(realcbindf['NEVT'],cbindf['NEVT'])
-
+    print("for", theta, "we found an LL of", -0.5 * np.sum((datacount - simcount) ** 2 / poisson**2))
+    sys.stdout.flush()
     if returnall:
          return -0.5 * np.sum((datacount - simcount) ** 2 / poisson**2),datacount,simcount,cbindf['c'][ww],poisson
 
@@ -196,20 +197,20 @@ for i in range(int(nwalkers*2)): #set this back to nwalkers*2 at some point
 
 if debug: ##### --debug
     #just run once through the likelihood with some parameters
-    print(log_likelihood((.1,.1,.1),connection=connections[-1],returnall=True))
-    abort
+    print(log_likelihood((-.062,.11,.03),connection=connections[-1],returnall=True))
+    abort #deliberately switched the 0.11 (stdr) and 0.03 (stdl) to get wrong value
 
 with Pool() as pool: #this is where Brodie comes in to get mc running in parallel on batch jobs. 
     #Instantiate the sampler once (in parallel)
     sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, pool=pool)
 
-    for i in range(200):
-        print("Starting loop iteration", i)
+    for qb in range(200):
+        print("Starting loop iteration", qb)
         print('begun', cpu_count(), "CPUs")
         sys.stdout.flush()
         #Run the sampler
         starttime = time.time()
-        sampler.run_mcmc(pos, 20, progress=True) #There used to be a semicolon here for some reason 
+        sampler.run_mcmc(pos, 200, progress=True) #There used to be a semicolon here for some reason 
         #May need to implement a proper burn-in 
         endtime = time.time()
         multi_time = endtime - starttime 
@@ -274,9 +275,7 @@ with Pool() as pool: #this is where Brodie comes in to get mc running in paralle
 
         plt.clf()
         plt.errorbar(realdata.cbindf['c'],realdata.cbindf['NEVT'],yerr=np.sqrt(realdata.cbindf['NEVT']),fmt='o',c='k',label='REAL DATA')   
-        len2 = len(flat_samples)
-        theta = np.mean(flat_samples[int(len2/2):,:],axis=0)
-        theta = np.mean(samples[-1,:,:])
+        theta = np.mean(flat_samples[-5:,:],axis=0)
         tc = init_connection(i*100,real=False,debug=True)[1]
         chisq,data,simcount,simc,err = log_likelihood((theta[0],theta[1],theta[2]),returnall=True,connection=tc)
         plt.plot(simc,simcount,c='darkgreen',label='SIMULATION')
