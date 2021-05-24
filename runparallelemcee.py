@@ -18,6 +18,7 @@ from multiprocessing import current_process
 from multiprocessing import cpu_count
 import emcee
 import time 
+import psutil
 
 resume = False
 debug = False
@@ -62,7 +63,6 @@ def init_connection(index,real=True,debug=False):
         connection = callSALT2mu.SALT2mu( 
             'SALT2mu.exe SALT2mu_DESNN_SIM_nolowz.input SUBPROCESS_FILES=%s,%s,%s SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,HOST_LOGMASS',
             mapsout,simdataout,subprocess_log_sim)
-
 
     if not real: #connection is an object that is equal to SUBPROCESS_SIM/DATA
         connection.getResult() #Gets result, as it were
@@ -123,7 +123,11 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         print('next')
         connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions 
         print('got result')
-        if np.isnan(connection.beta):
+        try:
+            if np.isnan(connection.beta):
+                return -np.inf
+        except AttributeError:
+            print("We tripped an AttributeError here.")
             return -np.inf
 
         cbindf = connection.cbindf #THIS IS THE PANDAS DATAFRAME OF THE OUTPUT FROM SALT2mu
@@ -154,6 +158,7 @@ def log_prior(theta):
 
 
 def log_probability(theta):
+    print(psutil.virtual_memory().available * 100 / psutil.virtual_memory().total, "is the percentage of memory used")
     lp = log_prior(theta)
     if not np.isfinite(lp):
         return -np.inf
@@ -197,7 +202,7 @@ for i in range(int(nwalkers*2)): #set this back to nwalkers*2 at some point
 
 if debug: ##### --debug
     #just run once through the likelihood with some parameters
-    print(log_likelihood((-.062,.11,.03),connection=connections[-1],returnall=True))
+    print(log_likelihood((-.1, 0.01, 0.17),connection=connections[-1],returnall=True))
     abort #deliberately switched the 0.11 (stdr) and 0.03 (stdl) to get wrong value
 
 with Pool() as pool: #this is where Brodie comes in to get mc running in parallel on batch jobs. 
@@ -207,10 +212,11 @@ with Pool() as pool: #this is where Brodie comes in to get mc running in paralle
     for qb in range(200):
         print("Starting loop iteration", qb)
         print('begun', cpu_count(), "CPUs")
+        print(psutil.virtual_memory().available * 100 / psutil.virtual_memory().total, "is the percentage of memory used")
         sys.stdout.flush()
         #Run the sampler
         starttime = time.time()
-        sampler.run_mcmc(pos, 200, progress=True) #There used to be a semicolon here for some reason 
+        sampler.run_mcmc(pos, 50, progress=True) #There used to be a semicolon here for some reason 
         #May need to implement a proper burn-in 
         endtime = time.time()
         multi_time = endtime - starttime 
