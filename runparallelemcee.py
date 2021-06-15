@@ -20,10 +20,10 @@ import emcee
 import time 
 import psutil
 
-JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code
-#JOBNAME_SALT2mu = "/home/rkessler/SNANA/bin/SALT2mu.exe"  # RK debug
+#JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code
+JOBNAME_SALT2mu = "/project2/rkessler/SURVEYS/SDSS/USERS/BAP37/SNANA_PRIV_INSTALL/SNANA/bin/SALT2mu.exe"  # RK debug
 
-inp_params = ['c', 'x1']
+inp_params = ['c', 'RV']
 
 resume = False
 debug = False
@@ -39,19 +39,19 @@ os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in em
 ####################################################################################################################
 
 #paramdict is hard coded to take the input parameters and expand into the necessary variables to properly model those 
-paramdict = {'c':['c_m', 'c_l', 'c_r'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_l_low','RV_r_low','RV_m_high','RV_l_high','RV_r_high']}
+paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_l_low','RV_r_low','RV_m_high','RV_l_high','RV_r_high']}
 
 #cleandict is ironically named at this point as it's gotten more and more unwieldy. It is designed to contain the following:
 #first entry is starting mean value for walkers. Second is the walker std. Third is whether or not the value needs to be positive (eg stds). Fourth is a list containing the lower and upper valid bounds for that parameter.
-cleandict = {'c_m':[-0.03, 0.03, False, [-0.3,0.3]], 'c_l':[0.044, 0.03, True, [0.01,0.2]], 'c_r':[0.044, 0.03, True, [0.01,0.2]], 
+cleandict = {'c_m':[-0.03, 0.03, False, [-0.3,0.3]], 'c_l':[0.044, 0.03, True, [0.01,0.2]], 'c_r':[0.044, 0.03, True, [0.01,0.2]], 'c_std':[0.044, 0.03, True, [0.01, 0.2]],
              'x1_m':[0,0.05, False, [-2,2]], 'x1_l':[1,1, True, [0.01,2]], 'x1_r':[1,1, True, [0.01,2]], 
              'EBV_Tau_low':[0.01, 0.01, True, [0.01, 0.2]], 'EBV_Tau_high':[0.01, 0.01, True, [0.001, 0.2]],
              'RV_m_low':[2, 0.5, True, [0.8, 4]], 'RV_l_low':[1, 0.5, True, [0.1, 4]], 'RV_r_low':[1, 0.5, True, [0.1, 4]],
              'RV_m_high':[2, 0.5, True, [0.8, 4]], 'RV_l_high':[1, 0.5, True, [0.1, 4]], 'RV_r_high':[1, 0.5, True, [0.1, 4]]}
 
 
-simdic = {'c':'SIM_c', 'x1':'SIM_x1'} #converts inp_param into SALT2mu readable format 
-arrdic = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01)} #arrays.
+simdic = {'c':'SIM_c', 'x1':'SIM_x1', "HOST_LOGMASS":"HOST_LOGMASS", 'RV':'SIM_RV', 'EBV':'SIM_EBV'} #converts inp_param into SALT2mu readable format 
+arrdic = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01), 'RV':np.arange(0,8,0.1), 'EBV':np.arange(0.0,1,.02)} #arrays.
 
 ####################################################################################################################        
 ################################## MISCELLANY ######################################################################             
@@ -99,18 +99,39 @@ def xconv(inp_param): #gnarly but needed for plotting
     elif inp_param == 'x1':
         return np.linspace(-3,3,12)
 
-def dffixer(df, RET): #TODO - expand for c v MURES and c v RMS
-    cpops = []
-    xpops =[]
-    for q in np.unique(df.ibin_x1.values):
-        cpops.append(np.sum(df[df.ibin_x1 == q].NEVT))
-    for q in np.unique(df.ibin_c.values):
-        xpops.append(np.sum(df[df.ibin_c == q].NEVT))
-    if RET == 'HIST':
-        return np.array(cpops), np.array(xpops)
+def dffixer(df, RET):
+    cpops = []  
+    rmspops = []
+    
+    dflow = df.loc[df.ibin_HOST_LOGMASS == 0]
+    dfhigh = df.loc[df.ibin_HOST_LOGMASS == 1]
+    
+    lowNEVT = dflow.NEVT.values
+    highNEVT = dfhigh.NEVT.values
+    lowrespops = dflow.MURES_SUM_WGT.values
+    highrespops = dfhigh.MURES_SUM_WGT.values
+    lowRMS = dflow.MURES_SQSUM.values
+    highRMS = dfhigh.MURES_SQSUM.values
+    
+    
+    for q in np.unique(df.ibin_c.values):                                       
+        #print(q, np.sum(df.loc[df.ibin_c == q].NEVT))    
+        cpops.append(np.sum(df.loc[df.ibin_c == q].NEVT))
+        
+    cpops = np.array(cpops)
+    
+    lowRMS = np.sqrt(lowRMS/lowNEVT - ((dflow.MURES_SUM/lowNEVT)**2))
+    highRMS = np.sqrt(highRMS/highNEVT - ((dfhigh.MURES_SUM/highNEVT)**2))
+    
+    if RET == 'HIST':         
+        return cpops 
+    elif RET == 'ANALYSIS':
+        return (cpops), (highrespops/dfhigh.SUM_WGT.values), (lowrespops/dflow.SUM_WGT.values), (highRMS), (lowRMS)
+    else:
+        return 'No output'
 
 
-def LL_Creator(inparr, returnall_2=False): #takes a list of arrays - eg [[data_1, sim_1],[data_2, sim_2]] and gives an LL. 
+def LL_Creator(inparr, simbeta, returnall_2=False): #takes a list of arrays - eg [[data_1, sim_1],[data_2, sim_2]] and gives an LL. 
     if returnall_2:
         datacount_list = []
         simcount_list = []
@@ -127,10 +148,12 @@ def LL_Creator(inparr, returnall_2=False): #takes a list of arrays - eg [[data_1
             poisson_list.append(poisson)
             ww_list.append(ww)
     LL_list = np.array(LL_list)
+    LL_Beta = -0.5 * ((realbeta - simbeta) ** 2 / realbetaerr**2)    
+
     if not returnall_2:
-        return np.sum(LL_list)
+        return np.sum(LL_list)+LL_Beta
     else:
-        return np.sum(LL_list), datacount_list, simcount_list, poisson_list, ww_list
+        return np.sum(LL_list)+LL_Beta, datacount_list, simcount_list, poisson_list, ww_list
 
 def pltting_func(sampler, inp_params):
     labels = pconv(inp_params)  
@@ -287,21 +310,22 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         #connection.write_1D_PDF('SIM_c',[c,cl,cr],carr) #This writes SOMETHING.DAT
         #connection.write_1D_PDF('SIM_x1',[x,xl,xr],xarr) #THIS IS WHERE TO ADD MORE PARAMETERS
         for inp in inp_params: #TODO - need to generalise to 2d functions as well
-            if 'V' not in inp: #TODO - unclear if 'V' is the right call but it's here now 
-                connection.write_1D_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
-            elif 'RV' in inp:
+            if 'RV' in inp:
                 connection.write_2D_Mass_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
                 #connection.write_2D_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
             elif 'EBV' in inp:
-                print('TODO')
+                connection.write_2D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+            else:
+                print(inp)
+                connection.write_1D_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp]) 
         print('next',flush=True)
         connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions 
         print('got result', flush=True)
         try:
             if np.isnan(connection.beta):
                 print('WARNING! oops negative infinity!')
-                newcon = (current_process()._identity[0]-1) #% see above at original connection generator, this has been changed                
-                tc = init_connection(newcon,real=False)[1]                                                                               
+                newcon = (current_process()._identity[0]-1) #% see above at original connection generator, this has been changed  
+                tc = init_connection(newcon,real=False)[1]                      
                 connections[newcon] = tc 
                 return -np.inf
         except AttributeError:
@@ -309,23 +333,26 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
             if debug:
                 tc = init_connection(0,real=False,debug=debug)[1] #set this back to debug=debug                       
                 connections[0] = tc
-                tempin = np.abs(random.choice([0.001, .1]) * np.random.randn(nwalkers, ndim))[0]             
+                tempin = np.abs(random.choice([1, .1]) * np.random.randn(nwalkers, ndim))[0]             
                 print('inp', tempin)                 
                 return -np.inf
             else:
-                newcon = (current_process()._identity[0]-1) #% see above at original connection generator, this has been changed                            
+                newcon = (current_process()._identity[0]-1) #% see above at original connection generator, this has been changed 
                 tc = init_connection(newcon,real=False)[1]                            
                 connections[newcon] = tc   
                 return -np.inf
-        
+        #ANALYSIS returns c, highres, lowres, rms
         try: #TODO - need to generalise for more parameters and add more options than just HIST 
             bindf = connection.bindf #THIS IS THE PANDAS DATAFRAME OF THE OUTPUT FROM SALT2mu
             bindf = bindf.dropna()
-            sim_c, sim_x = dffixer(bindf, 'HIST')
+            sim_vals = dffixer(bindf, 'ANALYSIS')
             realbindf = realdata.bindf #same for the real data (was a global variable)
             realbindf = realbindf.dropna()
-            real_c, real_x = dffixer(realbindf, 'HIST')
-            resparr = [[real_c, sim_c],[real_x, sim_x]] #Need to generate this programmatically. 
+            real_vals = dffixer(realbindf, 'ANALYSIS')
+            resparr = []
+            for lin in range(len(real_vals)):
+                resparr.append([real_vals[lin],sim_vals[lin]])
+            #resparr = [[real_c, sim_c],[real_hires, sim_hires], [real_lores, sim_lores], [real_rms, sim_rms]] #Need to generate this programmatically. 
             #print('DEBUG!', resparr)
         #I don't love this recasting, it's a memory hog, but it's temporary.
         except:
@@ -342,26 +369,19 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         else:
             print('WARNING! Slurm Broken Pipe Error!') #REGENERATE THE CONNECTION 
             print('before regenerating')
-            #print(connections, len(connections), flush=True) 
-            #print('connections', 'nconnections', flush=True)
             newcon = (current_process()._identity[0]-1) #% see above at original connection generator, this has been changed 
-            print('DEBUG!', os.getpid(), 'PID', newcon, 'Connection', flush=True)
             tc = init_connection(newcon,real=False)[1]
             connections[newcon] = tc
-            #print('after regenerating')
-            #print(newcon, tc, connections, len(connections), flush=True)
-            #print('newcon', 'tc', 'connections', 'nconnections', flush=True)
             return log_likelihood(theta)
     
     sys.stdout.flush()
     if returnall:
-        out_result = LL_Creator(resparr)  
+        out_result = LL_Creator(resparr, connection.beta)  
         print("for", theta, "we found an LL of", out_result)            
         sys.stdout.flush()
-        return LL_Creator(resparr, returnall)
-        #return LL,datacount,simcount,bindf['c'][ww],poisson
+        return LL_Creator(resparr, connection.beta, returnall)
     else:
-        out_result = LL_Creator(resparr)
+        out_result = LL_Creator(resparr, connection.beta)
         print("for", theta, "we found an LL of", out_result)
         sys.stdout.flush()
         return out_result
@@ -437,6 +457,8 @@ print(pos)
 ##### Run SALT2mu on the real data once! ################
 realdata, _ = init_connection(0,debug=debug)
 #########################################################
+realbeta = realdata.beta
+realbetaerr = realdata.betaerr
 
 #### Open a bunch of parallel connections to SALT2mu ### 
 connections = []

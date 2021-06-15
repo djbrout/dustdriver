@@ -124,6 +124,11 @@ class SALT2mu: #I understand classes better now
         probs = probs/np.max(probs)
         return arr,probs #x and y
 
+    def get_1d_exponential(self, tau, arr):
+        probs = (tau**-1)*np.exp(-arr/tau)
+        probs = probs/np.max(probs)
+        return arr, probs
+
     def writeheader(self,names): #writes the header 
         self.crosstalkfile.write('VARNAMES:')
         for name in names:
@@ -155,7 +160,12 @@ class SALT2mu: #I understand classes better now
 
     def write_1D_PDF(self,varname, PARAMS, arr):
         self.writeheader([varname])
-        mean,lhs,rhs = PARAMS
+        try:
+            mean,lhs,rhs = PARAMS
+        except ValueError:
+            mean = PARAMS[0]
+            lhs = PARAMS[1]
+            rhs = lhs
         arr,probs = self.get_1d_asym_gauss(mean,lhs,rhs,arr)
         self.write1Dprobs(arr,probs)
 
@@ -166,25 +176,37 @@ class SALT2mu: #I understand classes better now
                 arr,probs = self.get_1d_asym_gauss(mean,lhs,rhs)
             else:
                 arr,probs = self.get_1d_asym_gauss(mean,lhs,rhs)
-            
             probs[arr<.5] = 0
             self.write2Dprobs(arr,mass,probs)
 
     def write_2D_Mass_PDF(self, varname, PARAMS, arr):
-        self.writeheader(varname, 'HOST_LOGMASS')
+        self.writeheader([varname, 'LOGMASS'])
         massarr = np.arange(6,14,1)
-        Lmean, Llhs, Lrhs = PARAMS[0:4]
+        Lmean, Llhs, Lrhs = PARAMS[0:3]
         Hmean, Hlhs, Hrhs = PARAMS[3:]        
-        for mass in massarr:                                                                                                                                                      
+        for mass in massarr:               
             if mass < 10:                                                                
-            arr,probs = self.get_1d_asym_gauss(Lmean,Llhs,Lrhs,arr)                
-        else:                                                                                                                                                                            
-            arr,probs = self.get_1d_asym_gauss(Hmean,Hlhs,Hrhs,arr)                 
-        probs[arr<.5] = 0                                                                                                             
+                arr,probs = self.get_1d_asym_gauss(Lmean,Llhs,Lrhs,arr)                
+            else:                          
+                arr,probs = self.get_1d_asym_gauss(Hmean,Hlhs,Hrhs,arr)                 
+        probs[arr<.5] = 0                             
         self.write2Dprobs(arr,mass,probs) 
 
 
-    def write_2D_PDF(self, varname, LOWPARAMS, HIGHPARAMS, arr):            
+    def write_2D_MassEBV_PDF(self, varname, PARAMS, arr):  
+        self.writeheader([varname, 'LOGMASS'])       
+        massarr = np.arange(6,14,1)     
+        LTau = PARAMS[0]
+        HTau = PARAMS[1]  
+        for mass in massarr:    
+            if mass < 10:      
+                arr,probs = self.get_1d_exponential(LTau,arr)     
+            else:             
+                arr,probs = self.get_1d_exponential(HTau,arr)         
+        probs[arr<.5] = 0          
+        self.write2Dprobs(arr,mass,probs)
+
+    def write_2D_PDF(self, varname, LOWPARAMS, HIGHPARAMS, arr):     
         self.writeheader([varname[0], varname[1]])                    
         Lmean, Llhs, Lrhs = LOWPARAMS
         Hmean, Hlhs, Hrhs = HIGHPARAMS 
