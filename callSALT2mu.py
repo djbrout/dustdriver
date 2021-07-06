@@ -22,7 +22,7 @@ def setup_custom_logger(name, screen=False):
     return logger
 
 
-massarr = np.arange(5.05,15.,.1)
+massarr = np.arange(5.,15.,1)
 
 class SALT2mu: #I understand classes better now
     def __init__(self,command,mapsout,SALT2muout,log,realdata=False,debug=False): #setting all sorts of class values
@@ -114,6 +114,7 @@ class SALT2mu: #I understand classes better now
         self.beta = float(text.split('beta0')[1].split()[1])
         self.betaerr = float(text.split('beta0')[1].split()[3])
         self.headerinfo = self.NAndR(StringIO(text))
+        self.sigint = float(text.split('sigint')[1].split()[1])
         #self.cbindf = pd.read_csv(StringIO(text),comment='#',delim_whitespace=True) #this appears to be the fitres file 
         self.bindf = pd.read_csv(StringIO(text), header=None, skiprows=self.headerinfo[1],names=self.headerinfo[0], delim_whitespace=True, comment='#')
         return True
@@ -174,37 +175,56 @@ class SALT2mu: #I understand classes better now
         for mass in massarr:
             if mass < 10:
                 arr,probs = self.get_1d_asym_gauss(mean,lhs,rhs)
+                self.write2Dprobs(arr,mass,probs)
             else:
                 arr,probs = self.get_1d_asym_gauss(mean,lhs,rhs)
             probs[arr<.5] = 0
             self.write2Dprobs(arr,mass,probs)
 
     def write_2D_Mass_PDF(self, varname, PARAMS, arr):
-        self.writeheader([varname, 'LOGMASS'])
-        massarr = np.arange(6,14,1)
+        self.writeheader([varname, 'HOST_LOGMASS'])
         Lmean, Llhs, Lrhs = PARAMS[0:3]
         Hmean, Hlhs, Hrhs = PARAMS[3:]        
         for mass in massarr:               
             if mass < 10:                                                                
                 arr,probs = self.get_1d_asym_gauss(Lmean,Llhs,Lrhs,arr)                
+                probs[arr < .4] = 0
+                self.write2Dprobs(arr,mass,probs)
             else:                          
                 arr,probs = self.get_1d_asym_gauss(Hmean,Hlhs,Hrhs,arr)                 
-        probs[arr<.5] = 0                             
-        self.write2Dprobs(arr,mass,probs) 
+                probs[arr < .4] = 0
+                self.write2Dprobs(arr,mass,probs)
+        self.crosstalkfile.write('\n')
 
+    def write_2D_Mass_PDF_SYMMETRIC(self, varname, PARAMS, arr):       
+        self.writeheader([varname, 'HOST_LOGMASS'])                 
+        Lmean, Llhs = PARAMS[0:2]
+        Lrhs = Llhs
+        Hmean, Hlhs = PARAMS[2:]
+        Hrhs = Hlhs
+        for mass in massarr:      
+            if mass < 10:           
+                arr,probs = self.get_1d_asym_gauss(Lmean,Llhs,Lrhs,arr)   
+                probs[arr < .4] = 0        
+                self.write2Dprobs(arr,mass,probs)     
+            else:          
+                arr,probs = self.get_1d_asym_gauss(Hmean,Hlhs,Hrhs,arr)  
+                probs[arr < .4] = 0        
+                self.write2Dprobs(arr,mass,probs)      
+        self.crosstalkfile.write('\n') 
 
     def write_2D_MassEBV_PDF(self, varname, PARAMS, arr):  
-        self.writeheader([varname, 'LOGMASS'])       
-        massarr = np.arange(6,14,1)     
+        self.writeheader([varname, 'HOST_LOGMASS'])       
         LTau = PARAMS[0]
         HTau = PARAMS[1]  
         for mass in massarr:    
             if mass < 10:      
                 arr,probs = self.get_1d_exponential(LTau,arr)     
+                self.write2Dprobs(arr,mass,probs)
             else:             
                 arr,probs = self.get_1d_exponential(HTau,arr)         
-        probs[arr<.5] = 0          
-        self.write2Dprobs(arr,mass,probs)
+                self.write2Dprobs(arr,mass,probs)
+        self.crosstalkfile.write('\n')
 
     def write_2D_PDF(self, varname, LOWPARAMS, HIGHPARAMS, arr):     
         self.writeheader([varname[0], varname[1]])                    

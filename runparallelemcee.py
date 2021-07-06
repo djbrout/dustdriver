@@ -20,38 +20,60 @@ import emcee
 import time 
 import psutil
 
+#################################################################################################################
+############################################## INPUT STUFF ######################################################
+#################################################################################################################
+
 #JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code
-JOBNAME_SALT2mu = "/project2/rkessler/SURVEYS/SDSS/USERS/BAP37/SNANA_PRIV_INSTALL/SNANA/bin/SALT2mu.exe"  # RK debug
+JOBNAME_SALT2mu = "/home/bap37/SNANA/bin/SALT2mu.exe"  # RK debug
 
-inp_params = ['c', 'RV']
+os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in emcee 
 
+inp_params = ['c', 'RV', 'EBV']
+tempin = [-0.08210122,  0.03983007,  1.95034514,  1.0486463, 1.22633644,  0.16720418, 0.08475066,  0.12327837]
+
+ncbins = 6
+data_input= f"SALT2mu_HIZ_DATA.input" 
+sim_input = f"SALT2mu_HIZ_SIM.input"   
+previous_samples = 'samples.npz'
+
+##################################################################################################################
+############################################# ARGPARSE ###########################################################
+##################################################################################################################
+
+doplot = False 
 resume = False
 debug = False
+stretch = False
 if '--debug' in sys.argv:
     debug = True
 if '--resume' in sys.argv:
     resume = True
-
-os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in emcee
+if '--stretch' in sys.argv:
+    stretch = True
+if '--doplot' in sys.argv:
+    doplot = True
+    debug = True 
 
 ####################################################################################################################
 ################################## DICTIONARY ######################################################################
 ####################################################################################################################
 
 #paramdict is hard coded to take the input parameters and expand into the necessary variables to properly model those 
-paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_l_low','RV_r_low','RV_m_high','RV_l_high','RV_r_high']}
+paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_std_low', 'RV_m_high','RV_std_high'], 'Beta':['beta_m','beta_std']}
 
 #cleandict is ironically named at this point as it's gotten more and more unwieldy. It is designed to contain the following:
 #first entry is starting mean value for walkers. Second is the walker std. Third is whether or not the value needs to be positive (eg stds). Fourth is a list containing the lower and upper valid bounds for that parameter.
 cleandict = {'c_m':[-0.03, 0.03, False, [-0.3,0.3]], 'c_l':[0.044, 0.03, True, [0.01,0.2]], 'c_r':[0.044, 0.03, True, [0.01,0.2]], 'c_std':[0.044, 0.03, True, [0.01, 0.2]],
              'x1_m':[0,0.05, False, [-2,2]], 'x1_l':[1,1, True, [0.01,2]], 'x1_r':[1,1, True, [0.01,2]], 
-             'EBV_Tau_low':[0.01, 0.01, True, [0.01, 0.2]], 'EBV_Tau_high':[0.01, 0.01, True, [0.001, 0.2]],
-             'RV_m_low':[2, 0.5, True, [0.8, 4]], 'RV_l_low':[1, 0.5, True, [0.1, 4]], 'RV_r_low':[1, 0.5, True, [0.1, 4]],
-             'RV_m_high':[2, 0.5, True, [0.8, 4]], 'RV_l_high':[1, 0.5, True, [0.1, 4]], 'RV_r_high':[1, 0.5, True, [0.1, 4]]}
+             'EBV_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBV_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
+             'RV_m_low':[2, 0.5, True, [0.8, 4]], 'RV_l_low':[1, 0.5, True, [0.1, 4]], 'RV_r_low':[1, 0.5, True, [0.1, 4]], 'RV_std_low':[1, 0.5, True, [0.1,4]],
+             'RV_m_high':[2, 0.5, True, [0.8, 4]], 'RV_l_high':[1, 0.5, True, [0.1, 4]], 'RV_r_high':[1, 0.5, True, [0.1, 4]], 'RV_std_high':[1, 0.5, True, [0.1,4]],
+             'beta_m':[2, 0.5, False, [1,3]], 'beta_std':[.2, .1, False, [0, 1]]}
 
 
-simdic = {'c':'SIM_c', 'x1':'SIM_x1', "HOST_LOGMASS":"HOST_LOGMASS", 'RV':'SIM_RV', 'EBV':'SIM_EBV'} #converts inp_param into SALT2mu readable format 
-arrdic = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01), 'RV':np.arange(0,8,0.1), 'EBV':np.arange(0.0,1,.02)} #arrays.
+simdic = {'c':'SIM_c', 'x1':'SIM_x1', "HOST_LOGMASS":"HOST_LOGMASS", 'RV':'SIM_RV', 'EBV':'SIM_EBV', 'Beta':'SIM_beta'} #converts inp_param into SALT2mu readable format 
+arrdic = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01), 'RV':np.arange(0,8,0.1), 'EBV':np.arange(0.0,1.5,.02)} #arrays.
 
 ####################################################################################################################        
 ################################## MISCELLANY ######################################################################             
@@ -68,11 +90,14 @@ def thetaconverter(theta): #takes in theta and returns a dictionary of what cuts
         thetadict[p] = thetalist 
     return thetadict #key gives location of relevant parameters in extparams 
 
-def thetawriter(theta, key): #this does the splitting that thetaconverter sets up. Used in log_likelihood 
+def thetawriter(theta, key, names=False): #this does the splitting that thetaconverter sets up. Used in log_likelihood 
     thetadict = thetaconverter(theta)
     lowbound = thetadict[key][0]
     highbound = thetadict[key][-1]+1
-    return (theta[lowbound:highbound])
+    if names:
+        return names[lowbound:highbound]
+    else:
+        return (theta[lowbound:highbound])
 
 
 def input_cleaner(inp_params, cleandict): #this function takes in the input parameters and generates the walkers with appropriate dimensions, starting points, walkers, and step size 
@@ -108,8 +133,8 @@ def dffixer(df, RET):
     
     lowNEVT = dflow.NEVT.values
     highNEVT = dfhigh.NEVT.values
-    lowrespops = dflow.MURES_SUM_WGT.values
-    highrespops = dfhigh.MURES_SUM_WGT.values
+    lowrespops = dflow.MURES_SUM.values
+    highrespops = dfhigh.MURES_SUM.values
     lowRMS = dflow.MURES_SQSUM.values
     highRMS = dfhigh.MURES_SQSUM.values
     
@@ -120,47 +145,68 @@ def dffixer(df, RET):
         
     cpops = np.array(cpops)
     
-    lowRMS = np.sqrt(lowRMS/lowNEVT - ((dflow.MURES_SUM/lowNEVT)**2))
-    highRMS = np.sqrt(highRMS/highNEVT - ((dfhigh.MURES_SUM/highNEVT)**2))
+    lowRMS = np.sqrt(lowRMS/lowNEVT - ((dflow.MURES_SUM.values/lowNEVT)**2))
+    highRMS = np.sqrt(highRMS/highNEVT - ((dfhigh.MURES_SUM.values/highNEVT)**2))
     
     if RET == 'HIST':         
         return cpops 
     elif RET == 'ANALYSIS':
-        return (cpops), (highrespops/dfhigh.SUM_WGT.values), (lowrespops/dflow.SUM_WGT.values), (highRMS), (lowRMS)
+        return (cpops), (highrespops/dfhigh.NEVT.values), (lowrespops/dflow.NEVT.values), (highRMS), (lowRMS), (highNEVT), (lowNEVT)
     else:
         return 'No output'
 
-
-def LL_Creator(inparr, simbeta, returnall_2=False): #takes a list of arrays - eg [[data_1, sim_1],[data_2, sim_2]] and gives an LL. 
-    if returnall_2:
-        datacount_list = []
-        simcount_list = []
-        poisson_list = []
-        ww_list = []
+def LL_Creator(inparr, simbeta, simsigint, returnall_2=False): #takes a list of arrays - eg [[data_1, sim_1],[data_2, sim_2]] and gives an LL      
+    if returnall_2:     
+        datacount_list = []         
+        simcount_list = []       
+        poisson_list = []    
     LL_list = []
-    for i in inparr:
-        datacount,simcount,poisson,ww = normhisttodata(i[0], i[1])
-        LL_c = -0.5 * np.sum((datacount - simcount) ** 2 / poisson**2) 
-        LL_list.append(LL_c)
-        if returnall_2:
-            datacount_list.append(datacount)
-            simcount_list.append(simcount)
-            poisson_list.append(poisson)
-            ww_list.append(ww)
-    LL_list = np.array(LL_list)
-    LL_Beta = -0.5 * ((realbeta - simbeta) ** 2 / realbetaerr**2)    
+    print('real beta, sim beta, real beta error', realbeta, simbeta, realbetaerr)
+    sys.stdout.flush()
+    LL_Beta = -0.5 * ((realbeta - simbeta) ** 2 / realbetaerr**2) 
+    LL_sigint = -0.5 * ((realsigint - simsigint) ** 2 / realsiginterr**2) * ncbins
+    thetaconverter(inp_params)
+    for n, i in enumerate(inparr):    
+        if n == 0: #colour
+            datacount,simcount,poisson,ww = normhisttodata(i[0], i[1])              
+        elif n == 1: #Hi mass MURES
+            datacount = i[0]
+            simcount  = i[1]
+            poisson = inparr[3][0]/np.sqrt(inparr[-2][0]) #uses RMS/sqrt(N) as error
+        elif n == 2: #lo mass MURES
+            datacount = i[0]
+            simcount  = i[1]
+            poisson = inparr[4][0]/np.sqrt(inparr[-1][0]) #uses RMS/sqrt(N) as error
+        elif (n == 3): #Hi mass RMS
+            datacount = i[0]
+            simcount = i[1]
+            poisson = i[0]/np.sqrt(2*inparr[-2][0]) #The error on the error is sigma/sqrt(2N)
+        elif (n == 4): #low mass RMS
+            datacount = i[0]    
+            simcount = i[1]   
+            poisson = i[0]/np.sqrt(2*inparr[-1][0])
 
-    if not returnall_2:
-        return np.sum(LL_list)+LL_Beta
-    else:
-        return np.sum(LL_list)+LL_Beta, datacount_list, simcount_list, poisson_list, ww_list
+        LL_c = -0.5 * np.sum((datacount - simcount) ** 2 / poisson**2)                                                                
+        LL_list.append(LL_c)      
+        if returnall_2:       
+            datacount_list.append(datacount)   
+            simcount_list.append(simcount)  
+            poisson_list.append(poisson) 
 
-def pltting_func(sampler, inp_params):
+    LL_list = LL_list[:-2]
+    LL_list.append(LL_Beta)
+    LL_list.append(LL_sigint)
+    LL_list = np.array(LL_list) 
+    if not returnall_2:        
+        return np.nansum(LL_list)                                                                                                       
+    else:    
+        return (LL_list), datacount_list, simcount_list, poisson_list 
+
+def pltting_func(samples, inp_params):
     labels = pconv(inp_params)  
     ndim = len(labels)
     plt.clf()                               
-    fig, axes = plt.subplots(ndim, figsize=(3*ndim, 7), sharex=True)                                   
-    samples = sampler.get_chain()                                        
+    fig, axes = plt.subplots(ndim, figsize=(3*ndim, 7), sharex=True) 
     for it in range(ndim): 
         ax = axes[it]      
         ax.plot(samples[:, :, it], "k", alpha=0.3)                                              
@@ -169,36 +215,68 @@ def pltting_func(sampler, inp_params):
         ax.yaxis.set_label_coords(-0.1, 0.5)                                                    
                                
     axes[-1].set_xlabel("step number");                                                         
-    plt.savefig('figures/chains.png')                                                           
+    plt.savefig('figures/'+data_input.split('.')[0]+'-chains.png')                                                           
     print('upload figures/chains.png')   
     plt.close()
                                
-    flat_samples = sampler.get_chain(discard=10, flat=True)                                     
+    flat_samples = samples.reshape(-1, samples.shape[-1])                           
 
     plt.clf()              
     fig = corner.corner(   
-        flat_samples, labels=labels                                                             
+        flat_samples, labels=labels, smooth=True                                                             
     );                     
-    plt.savefig('figures/corner.png')                                                           
+    plt.savefig('figures/'+data_input.split('.')[0]+'-corner.png')                                              
     print('upload figures/corner.png')                                                          
     plt.close()
     #plt.show()
-    
-    theta = np.mean(flat_samples[-5:,:],axis=0)
-    tc = init_connection(i*100,real=False,debug=True)[1]                                        
-    chisq, datacount_list, simcount_list, poisson_list, ww_list = log_likelihood((theta),returnall=True,connection=tc)
-    
-    for th in range(len(inp_params)):
-        plt.clf() 
-        datax = xconv(inp_params[th])
-        plt.errorbar(datax, datacount_list[th] ,yerr=(poisson_list[th]),fmt='o',c='k',label='REAL DATA')   
-        plt.plot(datax, simcount_list[th], c='darkgreen',label='SIMULATION')    
-        #plt.xlim(-.5,.5)
-        plt.legend()           
-        plt.xlabel("Observed Variable")                                                                
-        plt.savefig(f'figures/overplot_observed_DATA_SIM_{inp_params[th]}.png')                            
-        print(f'upload figures/overplot_observed_DATA_SIM_{inp_params[th]}.png')                              
-        plt.close() 
+
+def Criteria_Plotter(theta):
+    tc = init_connection(299,real=False,debug=True)[1]
+    chisq, datacount_list, simcount_list, poisson_list = log_likelihood((theta),returnall=True,connection=tc)
+    cbins = np.linspace(-0.2,0.25, ncbins)
+    if debug: print('RESULT!', chisq, flush=True)
+    sys.stdout.flush()
+
+    ######## Colour Histogram
+    plt.clf()
+    plt.errorbar(cbins, datacount_list[0], yerr =(poisson_list[0]), fmt='o', c='k', label='REAL DATA')
+    plt.plot(cbins, simcount_list[0], c='darkgreen',label='SIMULATION')
+    plt.legend()
+    plt.xlabel('c')
+    plt.ylabel('Count')
+    plt.savefig('figures/'+data_input.split('.')[0]+'overplot_observed_DATA_SIM_c.png')         
+    print('upload figures/overplot_observed_DATA_SIM_c.png')   
+    plt.close() 
+
+    ####### MURES hi and lo
+    plt.clf()          
+    if debug: print('DEBUG!',len(cbins), len(datacount_list[1]), len(poisson_list[1]))
+    sys.stdout.flush()
+    plt.errorbar(cbins, datacount_list[1], yerr =(poisson_list[1]), fmt='o', c='k', label='REAL DATA HIMASS')            
+    plt.plot(cbins, simcount_list[1], c='tab:orange',label='SIMULATION HIMASS')      
+
+    plt.errorbar(cbins, datacount_list[2], yerr =(poisson_list[1]), fmt='o', c='tab:green', label='REAL DATA LOWMASS')
+    plt.plot(cbins, simcount_list[2], c='tab:blue',label='SIMULATION LOWMASS') 
+    plt.legend()        
+    plt.xlabel('c')   
+    plt.ylabel('MURES')   
+    plt.savefig('figures/'+data_input.split('.')[0]+'overplot_observed_DATA_SIM_cvMURES.png')   
+    print('upload figures/overplot_observed_DATA_SIM_cvMURES.png')        
+    plt.close()  
+
+    ####### RMS hi and lo 
+    plt.clf()    
+    plt.errorbar(cbins, datacount_list[3], yerr =(poisson_list[3]), fmt='o', c='k', label='REAL DATA HIMASS')   
+    plt.plot(cbins, simcount_list[3], c='tab:orange',label='SIMULATION HIMASS')  
+
+    plt.errorbar(cbins, datacount_list[4], yerr =(poisson_list[4]), fmt='o', c='tab:green', label='REAL DATA LOWMASS') 
+    plt.plot(cbins, simcount_list[4], c='tab:blue',label='SIMULATION LOWMASS')
+    plt.legend()     
+    plt.xlabel('c')   
+    plt.ylabel('RMS')   
+    plt.savefig('figures/'+data_input.split('.')[0]+'overplot_observed_DATA_SIM_cvRMS.png')   
+    print('upload figures/overplot_observed_DATA_SIM_cvRMS.png')         
+    plt.close() 
     
     return 'Done'
 
@@ -217,11 +295,16 @@ def init_connection(index,real=True,debug=False):
     subprocess_log_data = 'parallel/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
     subprocess_log_sim = 'parallel/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()
 
-    arg_outtable = f"\'x1(12,-3:3)*c(12,-0.3:0.3)\'"
+    arg_outtable = f"\'c(6,-0.2:0.25)*HOST_LOGMASS(2,0:20)\'"
+
+    #data_input= f"SALT2mu_HIZ_DATA.input"
+    #sim_input = f"SALT2mu_HIZ_SIM.input"
+
+
 #    arg_outtable = f"screm"
     if debug:
         if real:
-            cmd = f"{JOBNAME_SALT2mu} SALT2mu_BS20_REALDATA_ALL_nolowz.input " \
+            cmd = f"{JOBNAME_SALT2mu} {data_input} " \
                   f"SUBPROCESS_FILES=%s,%s,%s " \
                   f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}"
             realdata = callSALT2mu.SALT2mu(cmd, 'NOTHING.DAT', realdataout, 
@@ -229,14 +312,14 @@ def init_connection(index,real=True,debug=False):
         else:
             realdata = 0
 
-        cmd = f"{JOBNAME_SALT2mu} SALT2mu_DESNN_SIM_nolowz.input SUBPROCESS_FILES=%s,%s,%s "\
-              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,HOST_LOGMASS " \
+        cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
+              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV " \
               f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}" 
         connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim, debug=True )
 
     else:
         if real: #Will always run SALT2mu on real data the first time through. Redoes RUNTEST_SUBPROCESS_BS20DATA 
-            cmd = f"{JOBNAME_SALT2mu} SALT2mu_BS20_REALDATA_ALL_nolowz.input " \
+            cmd = f"{JOBNAME_SALT2mu} {data_input} " \
                   f"SUBPROCESS_FILES=%s,%s,%s " \
                   f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}"
             realdata = callSALT2mu.SALT2mu(cmd, 'NOTHING.DAT', realdataout,
@@ -244,8 +327,8 @@ def init_connection(index,real=True,debug=False):
         else:
             realdata = 0
             #Then calls it on the simulation. Redoes RUNTEST_SUBPROCESS_SIM, essentially.
-        cmd = f"{JOBNAME_SALT2mu} SALT2mu_DESNN_SIM_nolowz.input SUBPROCESS_FILES=%s,%s,%s "\
-              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,HOST_LOGMASS " \
+        cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
+              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV " \
               f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}"
         connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim)
 
@@ -280,7 +363,7 @@ def normhisttodata(datacount,simcount):
     simtot = np.sum(simcount)
     simcount = simcount*datatot/simtot
 
-    ww = (datacount > 0) | (simcount>0)
+    ww = (datacount != 0) | (simcount != 0)
 
     poisson = np.sqrt(datacount)
     poisson[datacount == 0] = 1 
@@ -302,7 +385,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         if connection == False: #For MCMC running, will pick up a connection
             sys.stdout.flush()
             connection = connections[(current_process()._identity[0]-1)]#formerly connections[(current_process()._identity[0]-1) % len(connections)] 
-            print('DEBUG!', os.getpid(), 'PID', (current_process()._identity[0]-1), 'Connection')
+            #print('DEBUG!', os.getpid(), 'PID', (current_process()._identity[0]-1), 'Connection')
             sys.stdout.flush()
 
         connection = connection_prepare(connection) #cycle iteration, open SOMETHING.DAT
@@ -311,16 +394,21 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         #connection.write_1D_PDF('SIM_x1',[x,xl,xr],xarr) #THIS IS WHERE TO ADD MORE PARAMETERS
         for inp in inp_params: #TODO - need to generalise to 2d functions as well
             if 'RV' in inp:
-                connection.write_2D_Mass_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
-                #connection.write_2D_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+                #connection.write_2D_Mass_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+                connection.write_2D_Mass_PDF_SYMMETRIC(simdic[inp], thetawriter(theta, inp), arrdic[inp])
             elif 'EBV' in inp:
                 connection.write_2D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
             else:
-                print(inp)
+                #print(inp)
                 connection.write_1D_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp]) 
+        if stretch:
+            connection.write_1D_PDF('SIM_x1',[0.973, 1.472, 0.22], arrdic['x1'])
+            #0.973 ± 0.105 1.472 ± 0.080 0.222 ± 0.076
         print('next',flush=True)
+        #AAAAAAAA
         connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions 
         print('got result', flush=True)
+        #AAAAAAAA
         try:
             if np.isnan(connection.beta):
                 print('WARNING! oops negative infinity!')
@@ -363,7 +451,9 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         if debug:
             print('WARNING! we landed in a Broken Pipe error')
             tc = init_connection(0,real=False,debug=debug)[1] #set this back to debug=debug                                
-            tempin = np.abs(random.choice([0.001, .1]) * np.random.randn(nwalkers, ndim))[0]            
+            tempin = np.abs(random.choice([1, .1]) * np.random.randn(nwalkers, ndim))[0]            
+            tempin[0:4] = .1                           
+            tempin[3:] = 2 
             print('inp', tempin) 
             return log_likelihood(tempin, connection=tc,returnall=True)
         else:
@@ -372,40 +462,37 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
             newcon = (current_process()._identity[0]-1) #% see above at original connection generator, this has been changed 
             tc = init_connection(newcon,real=False)[1]
             connections[newcon] = tc
-            return log_likelihood(theta)
+            return log_likelihood(theta,connection=tc)
     
     sys.stdout.flush()
     if returnall:
-        out_result = LL_Creator(resparr, connection.beta)  
+        out_result = LL_Creator(resparr, connection.beta, connection.sigint)  
         print("for", theta, "we found an LL of", out_result)            
         sys.stdout.flush()
-        return LL_Creator(resparr, connection.beta, returnall)
+        return LL_Creator(resparr, connection.beta, connection.sigint, returnall)
     else:
-        out_result = LL_Creator(resparr, connection.beta)
+        out_result = LL_Creator(resparr, connection.beta, connection.sigint)
         print("for", theta, "we found an LL of", out_result)
         sys.stdout.flush()
         return out_result
 
 ###########################################################################################################################
 
-#def log_prior(theta): #I need to rewrite this to be less awful
-#    c,cl,cr,x,xl,xr = theta
-    #c,cl,cr = theta
-#    if -0.15 < c <= 0.1 and 0.01 < cl < 0.2 and 0.01 < cr < 0.2 and -2 < x <= 2 and 0.01 < xl < 3 and 0.01 < xr < 3:
-#        return 0.0
-#    elif -2 < x <= 2 and 0.0 < xl < 3 and 0.0 < xr < 3:
-#        return 0.0
-#    else:
-#        return -np.inf
-
-def logprior(theta): #goes through expanded input parameters and checks that they are all within range. If any are not, returns negative infinity.
-    thetadict = thetaconverter(theta) 
+def log_prior(theta, debug=False): #goes through expanded input parameters and checks that they are all within range. If any are not, returns negative infinity.
+    thetadict = thetaconverter(theta)
+    plist = pconv(inp_params) 
+    if debug: print('plist', plist)
     tlist = False #if all parameters are good, this remains false 
     for key in thetadict.keys(): 
+        if debug: print('key', key)
         temp_ps = (thetawriter(theta, key)) #I hate this but it works. Creates expanded list for this parameter
+        if debug: print('temp_ps', temp_ps)
+        plist_n = (thetawriter(theta, key, names=plist))
         for t in range(len(temp_ps)): #then goes through
-            lowb = cleandict[plist[t]][3][0] 
-            highb = cleandict[plist[t]][3][1]
+            if debug: print('plist name', plist_n[t])
+            lowb = cleandict[plist_n[t]][3][0] 
+            highb = cleandict[plist_n[t]][3][1]
+            if debug: print(lowb, temp_ps[t], highb)
             if  not lowb < temp_ps[t] < highb: # and compares to valid boundaries.
                 tlist = True
     if tlist:
@@ -418,7 +505,7 @@ def log_probability(theta):
     #print(psutil.virtual_memory().available * 100 / psutil.virtual_memory().total, "is the percentage of memory used")
     lp = log_prior(theta)
     if not np.isfinite(lp):
-        print('WARNING! We returned -inf')
+        print('WARNING! We returned -inf from small parameters!')
         sys.stdout.flush()
         return -np.inf
     else:
@@ -443,13 +530,14 @@ def log_probability(theta):
 pos, nwalkers, ndim = input_cleaner(inp_params, cleandict)
 
 if resume == True: #This needs to be generalised to more than just a 6x3 grid, but it works for now
-    past_results = np.load("samples.npz")
-    pos[:,0] = np.random.normal(past_results.f.arr_0[-1,:,0], 0.05) #mean
-    pos[:,1] = np.random.normal(past_results.f.arr_0[-1,:,1], 0.05) #cl
-    pos[:,2] = np.random.normal(past_results.f.arr_0[-1,:,2], 0.05) #cr
-    pos[:,3] = np.random.normal(past_results.f.arr_0[-1,:,3], 0.05) #mean x1     
-    pos[:,4] = np.random.normal(past_results.f.arr_0[-1,:,4], 0.05) #xl                                                        
-    pos[:,5] = np.random.normal(past_results.f.arr_0[-1,:,5], 0.05) #xr  
+    past_results = np.load(previous_samples)
+    pos2 = past_results.f.arr_0[-1,:,:]
+    if pos2.shape != pos.shape:
+        print('The previously saved samples are not of the same dimensionality as those you are trying to fit for...')
+        print('Quitting...')
+        quit()
+    else:
+        pos = pos2
 
 print(pos)
 
@@ -459,6 +547,17 @@ realdata, _ = init_connection(0,debug=debug)
 #########################################################
 realbeta = realdata.beta
 realbetaerr = realdata.betaerr
+realsigint = realdata.sigint
+realsiginterr = 0.01
+
+
+if doplot:    
+    past_results = np.load("samples.npz")            
+    past_results = past_results.f.arr_0
+    Criteria_Plotter(tempin)               
+    pltting_func(past_results, inp_params) 
+    print('done')
+    quit()
 
 #### Open a bunch of parallel connections to SALT2mu ### 
 connections = []
@@ -479,108 +578,40 @@ for i in range(int(nconn)): #set this back to nwalkers*2 at some point
 ########################################################
 
 if debug: ##### --debug
-    import random
-    #just run once through the likelihood with some parameters
-    for i in range(200):
-        #connections = [] 
-        #tc = init_connection(i,real=False,debug=debug)[1] #set this back to debug=debug                 
-        #connections.append(tc) 
-        #print(log_probability((-.1, 0.01, 0.17)))
-        tempin = np.abs(random.choice([0.1, .1]) * np.random.randn(nwalkers, ndim))[0]
-        print('inp', tempin)
-        print(log_likelihood(tempin, connection=connections[-1],returnall=True))
+    print('inp', tempin)
+    Criteria_Plotter(tempin)
     abort #deliberately switched the 0.11 (stdr) and 0.03 (stdl) to get wrong value
-
-
-#filename = "tutorial.h5"
-#backend = emcee.backends.HDFBackend(filename)
-##backend.reset(nwalkers, ndim)
 
 with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in parallel on batch jobs. 
     #Instantiate the sampler once (in parallel)
     sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, pool=pool)
 
-    for qb in range(1):
+    for qb in range(20):
         print("Starting loop iteration", qb)
         print('begun', cpu_count(), "CPUs with", nwalkers, ndim, "walkers and dimensions")
         #print(psutil.virtual_memory().available * 100 / psutil.virtual_memory().total, "is the percentage of memory used")
         sys.stdout.flush()
         #Run the sampler
-        starttime = time.time()
-        sampler.run_mcmc(pos, 500, progress=True) #There used to be a semicolon here for some reason 
+        if qb == 0:
+            state = sampler.run_mcmc(pos, 100, progress=True) #There used to be a semicolon here for some reason 
+            print('Finished burn-in!')
+            sampler.reset()
+            sampler.run_mcmc(state, 100, progress=True)
+        else:
+            state = sampler.run_mcmc(state, 100, progress=True)
+
         #May need to implement a proper burn-in 
-        endtime = time.time()
-        multi_time = endtime - starttime 
-        print("Multiprocessing took {0:.1f} seconds".format(multi_time))
         sys.stdout.flush() 
 
         #Save the output for later
         samples = sampler.get_chain()
         pos = samples[-1,:,:]
-        np.savez('samples.npz',samples)
-        print(pos, "New samples as input for next run")
+        np.savez(data_input.split('.')[0]+'-samples.npz',samples)
+        #print(pos, "New samples as input for next run")
 
         ### THATS IT! (below is just plotting to monitor the fitting) ##########
         ########################################################################
         ########################################################################
 
-        pltting_func(sampler, inp_params)
-
-"""
-        plt.clf()
-        fig, axes = plt.subplots(3, figsize=(10, 7), sharex=True)
-        samples = sampler.get_chain()
-        labels = ["cmean", "csigma-", "csigma+"]
-        for it in range(ndim):
-            ax = axes[it]
-            ax.plot(samples[:, :, it], "k", alpha=0.3)
-            ax.set_xlim(0, len(samples))
-            ax.set_ylabel(labels[it])
-            ax.yaxis.set_label_coords(-0.1, 0.5)
-
-        axes[-1].set_xlabel("step number");
-        plt.savefig('figures/chains.png')
-        print('upload figures/chains.png')
-        plt.close()
-
-        flat_samples = sampler.get_chain(discard=10, flat=True)
-
-        plt.clf()
-        fig = corner.corner(
-            flat_samples, labels=labels
-        );
-        plt.savefig('figures/corner.png')
-        print('upload figures/corner.png')
-        plt.close()
-
-        plt.clf()
-        xr = np.arange(-.3,.3,.001)
-        inds = np.random.randint(len(flat_samples), size=1000)
-        for ind in inds:
-            sample = flat_samples[ind,:]
-            arr,probs = _.get_1d_asym_gauss(sample[0],sample[1],sample[2],xr)
-            probs = probs/np.sum(probs)
-            plt.plot(arr,probs,c='gold',alpha=.02)
-        plt.plot([],[],c='gold',alpha=.5,label='MCMC Samples')
-        plt.plot(xr,_.get_1d_asym_gauss(-.062,.03,.11,xr)[1]/np.sum(_.get_1d_asym_gauss(-.062,.03,.11,xr)[1]),label='SK16 Parent Color',lw=4)
-        plt.xlim(-.3,.3)
-        plt.ylim(0,.01)
-        plt.legend()
-        plt.xlabel("Parent Color")
-        plt.savefig('figures/overplotmodel.png')
-        print('upload figures/overplotmodel.png')
-        plt.close()
-
-        plt.clf()
-        plt.errorbar(realdata.bindf['c'],realdata.bindf['NEVT'],yerr=np.sqrt(realdata.bindf['NEVT']),fmt='o',c='k',label='REAL DATA')   
-        theta = np.mean(flat_samples[-5:,:],axis=0)
-        tc = init_connection(i*100,real=False,debug=True)[1]
-        chisq,data,simcount,simc,err = log_likelihood((theta[0],theta[1],theta[2]),returnall=True,connection=tc)
-        plt.plot(simc,simcount,c='darkgreen',label='SIMULATION')
-        plt.xlim(-.5,.5)
-        plt.legend()
-        plt.xlabel("Observed Color")
-        plt.savefig('figures/overplot_observed_DATA_SIM.png')
-        print('upload figures/overplot_observed_DATA_SIM.png')
-        plt.close()
-"""
+    pltting_func(samples, inp_params)
+    Criteria_Plotter(pos[0])
