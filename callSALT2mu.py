@@ -10,7 +10,7 @@ import logging
 def setup_custom_logger(name, screen=False):
     formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
                                   datefmt='%Y-%m-%d %H:%M:%S')
-    handler = logging.FileHandler(f'log_{name}.log', mode='a+')
+    handler = logging.FileHandler(f'logs/log_{name}.log', mode='a+')
     handler.setFormatter(formatter)
     screen_handler = logging.StreamHandler(stream=sys.stdout)
     screen_handler.setFormatter(formatter)
@@ -23,6 +23,7 @@ def setup_custom_logger(name, screen=False):
 
 
 massarr = np.arange(5.,15.,1)
+zarr = np.linspace(-1.9,2.1,3) #further edit me 
 
 class SALT2mu: #I understand classes better now
     def __init__(self,command,mapsout,SALT2muout,log,realdata=False,debug=False): #setting all sorts of class values
@@ -113,6 +114,7 @@ class SALT2mu: #I understand classes better now
         self.alphaerr = float(text.split('alpha0')[1].split()[3])
         self.beta = float(text.split('beta0')[1].split()[1])
         self.betaerr = float(text.split('beta0')[1].split()[3])
+        self.maxprob = float(text.split('MAXPROB_RATIO')[1].split()[1])
         self.headerinfo = self.NAndR(StringIO(text))
         self.sigint = float(text.split('sigint')[1].split()[1])
         #self.cbindf = pd.read_csv(StringIO(text),comment='#',delim_whitespace=True) #this appears to be the fitres file 
@@ -136,6 +138,12 @@ class SALT2mu: #I understand classes better now
             self.crosstalkfile.write(' '+name)
         self.crosstalkfile.write(' PROB\n')
         return 
+
+    def write3Dprobs(self,arr,z,mass,probs): #Writes a 3D probability    
+        bigstr = ''    
+        for a,p in zip(arr,probs): 
+            bigstr+='PDF: %.3f %.2f %.2f %.3f\n'%(a,z,mass,p)        
+        self.crosstalkfile.write(bigstr)        
 
     def write2Dprobs(self,arr,mass,probs): #Writes a 2D probability 
         bigstr = ''
@@ -225,6 +233,31 @@ class SALT2mu: #I understand classes better now
                 arr,probs = self.get_1d_exponential(HTau,arr)         
                 self.write2Dprobs(arr,mass,probs)
         self.crosstalkfile.write('\n')
+
+    def write_3D_MassEBV_PDF(self, varname, PARAMS, arr):   #for when EBV needs a z split
+        self.writeheader([varname, 'SIM_ZCMB', 'HOST_LOGMASS']) #needs work   
+        LZ_LTau = PARAMS[0]    
+        LZ_HTau = PARAMS[1]   
+        HZ_LTau = PARAMS[2]
+        HZ_HTau = PARAMS[3]
+        for z in zarr:
+            if np.around(z,3) < 0.1:
+                for mass in massarr:      
+                    if mass < 10:  
+                        arr,probs = self.get_1d_exponential(LZ_LTau,arr)    
+                        self.write3Dprobs(arr,z,mass,probs)  
+                    else:  
+                        arr,probs = self.get_1d_exponential(LZ_HTau,arr) 
+                        self.write3Dprobs(arr,z,mass,probs)    
+            else:
+                for mass in massarr: 
+                    if mass < 10:           
+                        arr,probs = self.get_1d_exponential(HZ_LTau,arr)     
+                        self.write3Dprobs(arr,z,mass,probs)           
+                    else:    
+                        arr,probs = self.get_1d_exponential(HZ_HTau,arr) 
+                        self.write3Dprobs(arr,z,mass,probs)  
+        self.crosstalkfile.write('\n') 
 
     def write_2D_PDF(self, varname, LOWPARAMS, HIGHPARAMS, arr):     
         self.writeheader([varname[0], varname[1]])                    

@@ -24,27 +24,37 @@ import psutil
 ############################################## INPUT STUFF ######################################################
 #################################################################################################################
 
-#JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code
-JOBNAME_SALT2mu = "/home/bap37/SNANA/bin/SALT2mu.exe"  # RK debug
+JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code
+#JOBNAME_SALT2mu = "/home/bap37/SNANA/bin/SALT2mu.exe"  # RK debug
 
 os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in emcee 
 
-inp_params = ['c', 'RV', 'EBV']
-tempin = [-0.08210122,  0.03983007,  1.95034514,  1.0486463, 1.22633644,  0.16720418, 0.08475066,  0.12327837]
+inp_params = ['c', 'RV', 'EBVZ']
+tempin = [-0.07372071,  0.05470099,  2.14175912,  1.06861188,  1.54413064,  0.39776982,
+  0.12150534,  0.14901747,  0.12459312,  0.13753596]
+#tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3,  .13, .21, .1, .13] 
 
 ncbins = 6
-data_input= f"SALT2mu_HIZ_DATA.input" 
-sim_input = f"SALT2mu_HIZ_SIM.input"   
-previous_samples = 'samples.npz'
+data_input= f"SALT2mu_ALL_DATA.input" 
+sim_input = f"SALT2mu_ALL_SIM.input"   
+previous_samples = 'chains/SALT2mu_ALL_DATA-samples-run1.npz'
 
 ##################################################################################################################
 ############################################# ARGPARSE ###########################################################
 ##################################################################################################################
 
+splitEBV = False
+
+if 'EBVZ' in inp_params:
+    splitEBV = True
+
 doplot = False 
 resume = False
 debug = False
 stretch = False
+wfit = False 
+single = False
+
 if '--debug' in sys.argv:
     debug = True
 if '--resume' in sys.argv:
@@ -54,13 +64,18 @@ if '--stretch' in sys.argv:
 if '--doplot' in sys.argv:
     doplot = True
     debug = True 
-
+if '--wfit' in sys.argv:
+    wfit = True
+    resume = True
+if '--single' in sys.argv:
+    single = True
+    debug = True
 ####################################################################################################################
 ################################## DICTIONARY ######################################################################
 ####################################################################################################################
 
 #paramdict is hard coded to take the input parameters and expand into the necessary variables to properly model those 
-paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_std_low', 'RV_m_high','RV_std_high'], 'Beta':['beta_m','beta_std']}
+paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_std_low', 'RV_m_high','RV_std_high'], 'Beta':['beta_m','beta_std'], 'EBVZ':['EBVZL_Tau_low','EBVZL_Tau_high', 'EBVZH_Tau_low','EBVZH_Tau_high']}
 
 #cleandict is ironically named at this point as it's gotten more and more unwieldy. It is designed to contain the following:
 #first entry is starting mean value for walkers. Second is the walker std. Third is whether or not the value needs to be positive (eg stds). Fourth is a list containing the lower and upper valid bounds for that parameter.
@@ -69,11 +84,15 @@ cleandict = {'c_m':[-0.03, 0.03, False, [-0.3,0.3]], 'c_l':[0.044, 0.03, True, [
              'EBV_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBV_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
              'RV_m_low':[2, 0.5, True, [0.8, 4]], 'RV_l_low':[1, 0.5, True, [0.1, 4]], 'RV_r_low':[1, 0.5, True, [0.1, 4]], 'RV_std_low':[1, 0.5, True, [0.1,4]],
              'RV_m_high':[2, 0.5, True, [0.8, 4]], 'RV_l_high':[1, 0.5, True, [0.1, 4]], 'RV_r_high':[1, 0.5, True, [0.1, 4]], 'RV_std_high':[1, 0.5, True, [0.1,4]],
-             'beta_m':[2, 0.5, False, [1,3]], 'beta_std':[.2, .1, False, [0, 1]]}
+             'beta_m':[2, 0.5, False, [1,3]], 'beta_std':[.2, .1, False, [0, 1]],
+             'EBVZL_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBVZL_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
+             'EBVZH_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBVZH_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
+}
 
 
-simdic = {'c':'SIM_c', 'x1':'SIM_x1', "HOST_LOGMASS":"HOST_LOGMASS", 'RV':'SIM_RV', 'EBV':'SIM_EBV', 'Beta':'SIM_beta'} #converts inp_param into SALT2mu readable format 
-arrdic = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01), 'RV':np.arange(0,8,0.1), 'EBV':np.arange(0.0,1.5,.02)} #arrays.
+simdic = {'c':'SIM_c', 'x1':'SIM_x1', "HOST_LOGMASS":"HOST_LOGMASS", 'RV':'SIM_RV', 'EBV':'SIM_EBV', 'Beta':'SIM_beta', 'EBVZ':'SIM_EBV'} #converts inp_param into SALT2mu readable format 
+arrdic = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01), 'RV':np.arange(0,8,0.1), 'EBV':np.arange(0.0,1.5,.02),
+          'EBVZ':np.arange(0.0,1.5,.02)} #arrays.
 
 ####################################################################################################################        
 ################################## MISCELLANY ######################################################################             
@@ -164,7 +183,7 @@ def LL_Creator(inparr, simbeta, simsigint, returnall_2=False): #takes a list of 
     print('real beta, sim beta, real beta error', realbeta, simbeta, realbetaerr)
     sys.stdout.flush()
     LL_Beta = -0.5 * ((realbeta - simbeta) ** 2 / realbetaerr**2) 
-    LL_sigint = -0.5 * ((realsigint - simsigint) ** 2 / realsiginterr**2) * ncbins
+    LL_sigint = -0.5 * ((realsigint - simsigint) ** 2 / realsiginterr**2) * 2
     thetaconverter(inp_params)
     for n, i in enumerate(inparr):    
         if n == 0: #colour
@@ -289,11 +308,18 @@ def Criteria_Plotter(theta):
 def init_connection(index,real=True,debug=False):
     #Creates an open connection instance with SALT2mu.exe
 
-    realdataout = 'parallel/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
-    simdataout = 'parallel/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
-    mapsout = 'parallel/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
-    subprocess_log_data = 'parallel/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
-    subprocess_log_sim = 'parallel/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()
+    if wfit:
+        realdataout = 'M0DIF/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
+        simdataout = 'M0DIF/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
+        mapsout = 'M0DIF/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
+        subprocess_log_data = 'M0DIF/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
+        subprocess_log_sim = 'M0DIF/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()  
+    else:
+        realdataout = 'parallel/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
+        simdataout = 'parallel/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
+        mapsout = 'parallel/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
+        subprocess_log_data = 'parallel/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
+        subprocess_log_sim = 'parallel/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()
 
     arg_outtable = f"\'c(6,-0.2:0.25)*HOST_LOGMASS(2,0:20)\'"
 
@@ -302,19 +328,37 @@ def init_connection(index,real=True,debug=False):
 
 
 #    arg_outtable = f"screm"
-    if debug:
+
+    if wfit:
         if real:
             cmd = f"{JOBNAME_SALT2mu} {data_input} " \
                   f"SUBPROCESS_FILES=%s,%s,%s " \
-                  f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}"
+                  f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}" 
+            realdata = callSALT2mu.SALT2mu(cmd, 'NOTHING.DAT', realdataout,
+                                           subprocess_log_data, realdata=True, debug=True) 
+        else: 
+            realdata = 0 
+        cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
+              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB " \
+              f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
+              f"SUBPROCESS_OPTMASK=2"
+        connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim, debug=True )
+
+    elif debug:
+        if real:
+            cmd = f"{JOBNAME_SALT2mu} {data_input} " \
+                  f"SUBPROCESS_FILES=%s,%s,%s " \
+                  f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
+                  f"SUBPROCESS_OPTMASK=1"
             realdata = callSALT2mu.SALT2mu(cmd, 'NOTHING.DAT', realdataout, 
                                            subprocess_log_data, realdata=True, debug=True)
         else:
             realdata = 0
 
         cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
-              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV " \
-              f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}" 
+              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB " \
+              f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
+              f"SUBPROCESS_OPTMASK=1"
         connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim, debug=True )
 
     else:
@@ -328,7 +372,7 @@ def init_connection(index,real=True,debug=False):
             realdata = 0
             #Then calls it on the simulation. Redoes RUNTEST_SUBPROCESS_SIM, essentially.
         cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
-              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV " \
+              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB " \
               f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}"
         connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim)
 
@@ -397,7 +441,10 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
                 #connection.write_2D_Mass_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
                 connection.write_2D_Mass_PDF_SYMMETRIC(simdic[inp], thetawriter(theta, inp), arrdic[inp])
             elif 'EBV' in inp:
-                connection.write_2D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+                if splitEBV: #need to hold here to pass off both EBVZH and EBVZL simultaneously 
+                    connection.write_3D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+                else:
+                    connection.write_2D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
             else:
                 #print(inp)
                 connection.write_1D_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp]) 
@@ -408,7 +455,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         #AAAAAAAA
         connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions 
         print('got result', flush=True)
-        #AAAAAAAA
+        ####AAAAAAAAA
         try:
             if np.isnan(connection.beta):
                 print('WARNING! oops negative infinity!')
@@ -465,6 +512,10 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
             return log_likelihood(theta,connection=tc)
     
     sys.stdout.flush()
+    if connection.maxprob > 1.001:            
+        print(connection.maxprob, 'MAXPROB parameter greater than 1! Coming up against the bounding function! Returning -np.inf to account') 
+        return -np.inf 
+
     if returnall:
         out_result = LL_Creator(resparr, connection.beta, connection.sigint)  
         print("for", theta, "we found an LL of", out_result)            
@@ -539,11 +590,15 @@ if resume == True: #This needs to be generalised to more than just a 6x3 grid, b
     else:
         pos = pos2
 
-print(pos)
+#print(pos)
 
 #######################################################################
 ##### Run SALT2mu on the real data once! ################
-realdata, _ = init_connection(0,debug=debug)
+
+if debug:
+    realdata, _ = init_connection(299,debug=debug)
+else:
+    realdata, _ = init_connection(0,debug=debug)
 #########################################################
 realbeta = realdata.beta
 realbetaerr = realdata.betaerr
@@ -552,11 +607,43 @@ realsiginterr = 0.01
 
 
 if doplot:    
-    past_results = np.load("samples.npz")            
+    past_results = np.load(previous_samples)            
     past_results = past_results.f.arr_0
     Criteria_Plotter(tempin)               
     pltting_func(past_results, inp_params) 
     print('done')
+    quit()
+
+if wfit:
+    npoints = 200
+    past_results = np.load(previous_samples)
+    past_results = past_results.f.arr_0#[-npoints:,:,:]
+    past_results = past_results.reshape(-1,past_results.shape[-1])
+    past_results = np.unique(past_results, axis=0)#[::-npoint_step]
+    templen = len(past_results[:,0])
+    npoint_step = int(templen/(npoints))
+    tempin = past_results[::npoint_step,:]
+    tc = init_connection(299,real=False,debug=True)[1]
+    f = open('LL_List', 'w') #' '.join([str(elem) for elem in listy])
+    f.write('Index LL '+str( ' '.join([str(elem) for elem in pconv(inp_params)]))+' \n')
+    f.close()
+    for i in range(npoints):
+        f = open('LL_List', 'a')
+        print('starting M0DIF ', i)
+        #print(tempin[i])
+        chisq, datacount_list, simcount_list, poisson_list = log_likelihood((tempin[i]),returnall=True,connection=tc)  
+        print('RESULT!', chisq, flush=True) 
+        bigstr = ''
+        bigstr += str(i)+' '+str(np.sum(chisq))
+        for t in tempin[i]:
+            bigstr += ' '+str(t)
+        bigstr += ' \n'
+        f.write(bigstr)
+        print(str(i)+','+str(np.sum(chisq))+','+str(tempin[i]))
+        sys.stdout.flush() 
+        newfile = 'M0DIF/%d_SIMDATA_OUT.M0DIF'%i;
+        os.rename('OUT_SIM.M0DIF', newfile)
+        f.close()
     quit()
 
 #### Open a bunch of parallel connections to SALT2mu ### 
@@ -581,6 +668,11 @@ if debug: ##### --debug
     print('inp', tempin)
     Criteria_Plotter(tempin)
     abort #deliberately switched the 0.11 (stdr) and 0.03 (stdl) to get wrong value
+
+elif single:
+    print('inp', tempin)
+    Criteria_Plotter(tempin)
+    quit()
 
 with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in parallel on batch jobs. 
     #Instantiate the sampler once (in parallel)
@@ -608,6 +700,10 @@ with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in pa
         pos = samples[-1,:,:]
         np.savez(data_input.split('.')[0]+'-samples.npz',samples)
         #print(pos, "New samples as input for next run")
+
+        pltting_func(samples, inp_params)                                  
+        Criteria_Plotter(pos[0])                                                                          
+                            
 
         ### THATS IT! (below is just plotting to monitor the fitting) ##########
         ########################################################################
