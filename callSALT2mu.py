@@ -167,6 +167,21 @@ class SALT2mu: #I understand classes better now
         self.crosstalkfile.write('ITERATION_END: %d\n'%self.iter)
         self.crosstalkfile.flush()
 
+    def write_SALT2(self, name, PARAMS):
+        for tm in range(3):    
+            self.crosstalkfile.write("\n") 
+        mean = PARAMS[0]
+        std = PARAMS[1]
+        self.crosstalkfile.write(f"GENPEAK_SIM_{name}: {mean} \n")
+        self.crosstalkfile.write(f"GENSIGMA_SIM_{name}: {std} {std} \n")
+        if name == 'alpha':
+            self.crosstalkfile.write(f"GENRANGE_SIM_{name}: .1 .2 \n")
+        else:
+            self.crosstalkfile.write(f"GENRANGE_SIM_{name}: 1 3 \n")
+        for tm in range(3):
+            self.crosstalkfile.write("\n")
+
+
     def write_1D_PDF(self,varname, PARAMS, arr):
         self.writeheader([varname])
         try:

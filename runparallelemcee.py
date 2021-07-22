@@ -29,14 +29,13 @@ JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code
 
 os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in emcee 
 
-inp_params = ['c', 'RV', 'EBVZ', 'beta']
-tempin = [-0.07372071,  0.05470099,  2.14175912,  1.06861188,  1.54413064,  0.39776982,
-          0.12150534,  0.14901747,  0.12459312,  0.13753596, .2, 1]
+inp_params = ['c', 'RV', 'EBV', 'beta']
+tempin = [-0.07372071,  0.05470099,  2.14175912,  1.06861188,  1.54413064,  0.39776982, 0.12459312,  0.13753596, 2.0, .35]
 #tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3,  .13, .21, .1, .13] 
 
 ncbins = 6
-data_input= f"SALT2mu_ALL_DATA.input" 
-sim_input = f"SALT2mu_ALL_SIM.input"   
+data_input= f"SALT2mu_HIZ_DATA.input" 
+sim_input = f"SALT2mu_HIZ_BOUND.input"   
 previous_samples = 'chains/SALT2mu_ALL_DATA-samples-run1.npz'
 
 ##################################################################################################################
@@ -343,7 +342,7 @@ def init_connection(index,real=True,debug=False):
         else: 
             realdata = 0 
         cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
-              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB " \
+              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB,SIM_beta " \
               f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
               f"SUBPROCESS_OPTMASK=2"
         connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim, debug=True )
@@ -353,16 +352,17 @@ def init_connection(index,real=True,debug=False):
             cmd = f"{JOBNAME_SALT2mu} {data_input} " \
                   f"SUBPROCESS_FILES=%s,%s,%s " \
                   f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
-                  f"SUBPROCESS_OPTMASK=1"
+                  f"SUBPROCESS_OPTMASK=1" 
             realdata = callSALT2mu.SALT2mu(cmd, 'NOTHING.DAT', realdataout, 
                                            subprocess_log_data, realdata=True, debug=True)
         else:
             realdata = 0
 
         cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
-              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB " \
+              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB,SIM_beta " \
               f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
-              f"SUBPROCESS_OPTMASK=1"
+              f"SUBPROCESS_OPTMASK=1 " \
+              f"SUBPROCESS_SIMREF_FILE=/scratch/midway2/rkessler/PIPPIN_OUTPUT/HIGH-REDSHIFT-BOUND/1_SIM/SIMDES_4D_BS20/PIP_HIGH-REDSHIFT-BOUND_SIMDES_4D_BS20.input"
         connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim, debug=True )
 
     else:
@@ -376,7 +376,7 @@ def init_connection(index,real=True,debug=False):
             realdata = 0
             #Then calls it on the simulation. Redoes RUNTEST_SUBPROCESS_SIM, essentially.
         cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
-              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB " \
+              f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB,SIM_beta " \
               f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}"
         connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim)
 
