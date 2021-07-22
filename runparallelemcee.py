@@ -29,9 +29,9 @@ JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code
 
 os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in emcee 
 
-inp_params = ['c', 'RV', 'EBVZ']
+inp_params = ['c', 'RV', 'EBVZ', 'beta']
 tempin = [-0.07372071,  0.05470099,  2.14175912,  1.06861188,  1.54413064,  0.39776982,
-  0.12150534,  0.14901747,  0.12459312,  0.13753596]
+          0.12150534,  0.14901747,  0.12459312,  0.13753596, .2, 1]
 #tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3,  .13, .21, .1, .13] 
 
 ncbins = 6
@@ -75,7 +75,7 @@ if '--single' in sys.argv:
 ####################################################################################################################
 
 #paramdict is hard coded to take the input parameters and expand into the necessary variables to properly model those 
-paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_std_low', 'RV_m_high','RV_std_high'], 'Beta':['beta_m','beta_std'], 'EBVZ':['EBVZL_Tau_low','EBVZL_Tau_high', 'EBVZH_Tau_low','EBVZH_Tau_high']}
+paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_std_low', 'RV_m_high','RV_std_high'], 'beta':['beta_m','beta_std'], 'EBVZ':['EBVZL_Tau_low','EBVZL_Tau_high', 'EBVZH_Tau_low','EBVZH_Tau_high']}
 
 #cleandict is ironically named at this point as it's gotten more and more unwieldy. It is designed to contain the following:
 #first entry is starting mean value for walkers. Second is the walker std. Third is whether or not the value needs to be positive (eg stds). Fourth is a list containing the lower and upper valid bounds for that parameter.
@@ -90,7 +90,7 @@ cleandict = {'c_m':[-0.03, 0.03, False, [-0.3,0.3]], 'c_l':[0.044, 0.03, True, [
 }
 
 
-simdic = {'c':'SIM_c', 'x1':'SIM_x1', "HOST_LOGMASS":"HOST_LOGMASS", 'RV':'SIM_RV', 'EBV':'SIM_EBV', 'Beta':'SIM_beta', 'EBVZ':'SIM_EBV'} #converts inp_param into SALT2mu readable format 
+simdic = {'c':'SIM_c', 'x1':'SIM_x1', "HOST_LOGMASS":"HOST_LOGMASS", 'RV':'SIM_RV', 'EBV':'SIM_EBV', 'beta':'SIM_beta', 'EBVZ':'SIM_EBV'} #converts inp_param into SALT2mu readable format 
 arrdic = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01), 'RV':np.arange(0,8,0.1), 'EBV':np.arange(0.0,1.5,.02),
           'EBVZ':np.arange(0.0,1.5,.02)} #arrays.
 
@@ -308,18 +308,22 @@ def Criteria_Plotter(theta):
 def init_connection(index,real=True,debug=False):
     #Creates an open connection instance with SALT2mu.exe
 
+    directory = 'parallel'
     if wfit:
-        realdataout = 'M0DIF/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
-        simdataout = 'M0DIF/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
-        mapsout = 'M0DIF/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
-        subprocess_log_data = 'M0DIF/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
-        subprocess_log_sim = 'M0DIF/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()  
+        directory = 'M0DIF'
+
+    if wfit:
+        realdataout = f'{directory}/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
+        simdataout = f'{directory}/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
+        mapsout = f'{directory}/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
+        subprocess_log_data = f'{directory}/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
+        subprocess_log_sim = f'{directory}/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()  
     else:
-        realdataout = 'parallel/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
-        simdataout = 'parallel/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
-        mapsout = 'parallel/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
-        subprocess_log_data = 'parallel/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
-        subprocess_log_sim = 'parallel/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()
+        realdataout = f'{directory}/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
+        simdataout = f'{directory}/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
+        mapsout = f'{directory}/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
+        subprocess_log_data = f'{directory}/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
+        subprocess_log_sim = f'{directory}/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()
 
     arg_outtable = f"\'c(6,-0.2:0.25)*HOST_LOGMASS(2,0:20)\'"
 
@@ -445,6 +449,9 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
                     connection.write_3D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
                 else:
                     connection.write_2D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+            elif ('alpha' in inp) or ('beta' in inp):
+                print(inp, 'allegedly only beta or alpha')
+                connection.write_SALT2(inp, thetawriter(theta, inp))
             else:
                 #print(inp)
                 connection.write_1D_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp]) 
