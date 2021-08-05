@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=BS20FITTER
+#SBATCH --job-name=Brodinator
 #SBATCH --time=36:00:00
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=14
@@ -20,4 +20,4 @@ module load mkl
 #conda activate BS20
 
 cd /project2/rkessler/SURVEYS/DES/USERS/djbrout/dustdriver/
-python runparallelemcee.py --resume
+python runparallelemcee.py #--resume

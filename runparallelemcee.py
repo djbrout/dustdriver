@@ -25,18 +25,22 @@ import psutil
 #################################################################################################################
 
 JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code
-#JOBNAME_SALT2mu = "/home/bap37/SNANA/bin/SALT2mu.exe"  # RK debug
+#JOBNAME_SALT2mu = "/home/bap37/SNANA/bin/SALT2mu.exe" 
 
 os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in emcee 
 
-inp_params = ['c', 'RV', 'EBV', 'beta']
-tempin = [-0.07372071,  0.05470099,  2.14175912,  1.06861188,  1.54413064,  0.39776982, 0.12459312,  0.13753596, 2.0, .35]
-#tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3,  .13, .21, .1, .13] 
+
+#switching between bound and unbound involves editing inp_params, tempin, sim_input, and the init_connection file
+inp_params = ['c', 'RV', 'EBVZ', 'beta']
+#tempin = [-0.07372071,  0.05470099,  2.14175912,  1.06861188,  1.54413064,  0.39776982, 0.12459312,  0.13753596, 2.0, .35]
+tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3, .13, .13, .13, .21, 2.0, .35] 
+#tempin = [-0.07372071,  .02,  2.14175912,  1.06861188,  1.54413064,  0.39776982, 0.12459312,  0.13753596, .12, .14, 2.0, .35]
+tempin = [-0.07478121,  0.05038964,  1.88575588,  2.26321848,  1.72849619,  1.13732639, 0.08549067,  0.11739132,  0.1115375,   0.12054095,  2.01261982,  0.31081618]  
 
 ncbins = 6
-data_input= f"SALT2mu_HIZ_DATA.input" 
-sim_input = f"SALT2mu_HIZ_BOUND.input"   
-previous_samples = 'chains/SALT2mu_ALL_DATA-samples-run1.npz'
+data_input= f"SALT2mu_ALL_DATA.input"
+sim_input = f"SALT2mu_ALL_BOUND.input"
+previous_samples = 'chains/SALT2mu_ALL_DATA-samples.npz'
 
 ##################################################################################################################
 ############################################# ARGPARSE ###########################################################
@@ -53,6 +57,7 @@ debug = False
 stretch = False
 wfit = False 
 single = False
+shotnoise = False 
 
 if '--debug' in sys.argv:
     debug = True
@@ -69,6 +74,10 @@ if '--wfit' in sys.argv:
 if '--single' in sys.argv:
     single = True
     debug = True
+if '--shotnoise' in sys.argv:
+    shotnoise = True
+    debug = True
+    wfit = True
 ####################################################################################################################
 ################################## DICTIONARY ######################################################################
 ####################################################################################################################
@@ -250,7 +259,11 @@ def pltting_func(samples, inp_params):
 
 def Criteria_Plotter(theta):
     tc = init_connection(299,real=False,debug=True)[1]
-    chisq, datacount_list, simcount_list, poisson_list = log_likelihood((theta),returnall=True,connection=tc)
+    try:
+        chisq, datacount_list, simcount_list, poisson_list = log_likelihood((theta),returnall=True,connection=tc)
+    except TypeError:
+        print(f"LL was not returned after running log_likelihood, which is likely due to bad parameters. Will skip plotting.")
+        return 
     cbins = np.linspace(-0.2,0.25, ncbins)
     if debug: print('RESULT!', chisq, flush=True)
     sys.stdout.flush()
@@ -344,7 +357,7 @@ def init_connection(index,real=True,debug=False):
         cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
               f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB,SIM_beta " \
               f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
-              f"SUBPROCESS_OPTMASK=2"
+              f"SUBPROCESS_OPTMASK=6"
         connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim, debug=True )
 
     elif debug:
@@ -377,7 +390,9 @@ def init_connection(index,real=True,debug=False):
             #Then calls it on the simulation. Redoes RUNTEST_SUBPROCESS_SIM, essentially.
         cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
               f"SUBPROCESS_VARNAMES_GENPDF=SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB,SIM_beta " \
-              f"SUBPROCESS_OUTPUT_TABLE={arg_outtable}"
+              f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
+              f"SUBPROCESS_OPTMASK=4 " \
+              f"SUBPROCESS_SIMREF_FILE=/scratch/midway2/rkessler/PIPPIN_OUTPUT/HIGH-REDSHIFT-BOUND/1_SIM/SIMDES_4D_BS20/PIP_HIGH-REDSHIFT-BOUND_SIMDES_4D_BS20.input"
         connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim)
 
     if not real: #connection is an object that is equal to SUBPROCESS_SIM/DATA
@@ -450,7 +465,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
                 else:
                     connection.write_2D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
             elif ('alpha' in inp) or ('beta' in inp):
-                print(inp, 'allegedly only beta or alpha')
+                #print(inp, 'allegedly only beta or alpha')
                 connection.write_SALT2(inp, thetawriter(theta, inp))
             else:
                 #print(inp)
@@ -463,6 +478,10 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions 
         print('got result', flush=True)
         ####AAAAAAAAA
+        if connection.maxprob > 1.001:    
+            print(connection.maxprob, 'MAXPROB parameter greater than 1! Coming up against the bounding function! Returning -np.inf to account, caught right after connection', flush=True)    
+            return -np.inf 
+        #print(connection.maxprob, flush=True)
         try:
             if np.isnan(connection.beta):
                 print('WARNING! oops negative infinity!')
@@ -484,7 +503,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
                 connections[newcon] = tc   
                 return -np.inf
         #ANALYSIS returns c, highres, lowres, rms
-        try: #TODO - need to generalise for more parameters and add more options than just HIST 
+        try: 
             bindf = connection.bindf #THIS IS THE PANDAS DATAFRAME OF THE OUTPUT FROM SALT2mu
             bindf = bindf.dropna()
             sim_vals = dffixer(bindf, 'ANALYSIS')
@@ -494,8 +513,6 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
             resparr = []
             for lin in range(len(real_vals)):
                 resparr.append([real_vals[lin],sim_vals[lin]])
-            #resparr = [[real_c, sim_c],[real_hires, sim_hires], [real_lores, sim_lores], [real_rms, sim_rms]] #Need to generate this programmatically. 
-            #print('DEBUG!', resparr)
         #I don't love this recasting, it's a memory hog, but it's temporary.
         except:
             print('WARNING! something went wrong in reading in stuff for the LL calc')
@@ -504,11 +521,8 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
     except BrokenPipeError:
         if debug:
             print('WARNING! we landed in a Broken Pipe error')
-            tc = init_connection(0,real=False,debug=debug)[1] #set this back to debug=debug                                
-            tempin = np.abs(random.choice([1, .1]) * np.random.randn(nwalkers, ndim))[0]            
-            tempin[0:4] = .1                           
-            tempin[3:] = 2 
-            print('inp', tempin) 
+            quit()
+            tc = init_connection(299,real=False,debug=True)[1]
             return log_likelihood(tempin, connection=tc,returnall=True)
         else:
             print('WARNING! Slurm Broken Pipe Error!') #REGENERATE THE CONNECTION 
@@ -519,9 +533,6 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
             return log_likelihood(theta,connection=tc)
     
     sys.stdout.flush()
-    if connection.maxprob > 1.001:            
-        print(connection.maxprob, 'MAXPROB parameter greater than 1! Coming up against the bounding function! Returning -np.inf to account') 
-        return -np.inf 
 
     if returnall:
         out_result = LL_Creator(resparr, connection.beta, connection.sigint)  
@@ -621,12 +632,25 @@ if doplot:
     print('done')
     quit()
 
+elif single:           
+    print('inp', tempin)          
+    Criteria_Plotter(tempin)      
+    quit()  
+
+if shotnoise:
+    tc = init_connection(299,real=False,debug=True)[1]
+    for tp in range(200):
+        chisq, datacount_list, simcount_list, poisson_list = log_likelihood((tempin),returnall=True,connection=tc) 
+        newfile = 'SHOTNOISE/%d_SIMDATA_OUT.M0DIF'%tp;
+        os.rename('OUT_SIM.M0DIF', newfile)   
+    quit()
+
 if wfit:
     npoints = 200
     past_results = np.load(previous_samples)
     past_results = past_results.f.arr_0#[-npoints:,:,:]
     past_results = past_results.reshape(-1,past_results.shape[-1])
-    past_results = np.unique(past_results, axis=0)#[::-npoint_step]
+    #past_results = np.unique(past_results, axis=0)#[::-npoint_step]
     templen = len(past_results[:,0])
     npoint_step = int(templen/(npoints))
     tempin = past_results[::npoint_step,:]
@@ -673,13 +697,12 @@ for i in range(int(nconn)): #set this back to nwalkers*2 at some point
 
 if debug: ##### --debug
     print('inp', tempin)
-    Criteria_Plotter(tempin)
+    #Criteria_Plotter(tempin)
+    for tp in range(20):
+        print(f"loop {tp}")
+        log_likelihood((tempin),returnall=True,connection=tc)
     abort #deliberately switched the 0.11 (stdr) and 0.03 (stdl) to get wrong value
 
-elif single:
-    print('inp', tempin)
-    Criteria_Plotter(tempin)
-    quit()
 
 with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in parallel on batch jobs. 
     #Instantiate the sampler once (in parallel)
@@ -708,6 +731,7 @@ with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in pa
         np.savez(data_input.split('.')[0]+'-samples.npz',samples)
         #print(pos, "New samples as input for next run")
 
+        print(pos[0])
         pltting_func(samples, inp_params)                                  
         Criteria_Plotter(pos[0])                                                                          
                             
@@ -716,5 +740,3 @@ with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in pa
         ########################################################################
         ########################################################################
 
-    pltting_func(samples, inp_params)
-    Criteria_Plotter(pos[0])
