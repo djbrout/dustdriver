@@ -320,32 +320,47 @@ def Criteria_Plotter(theta):
 def init_connection(index,real=True,debug=False):
     #Creates an open connection instance with SALT2mu.exe
 
+    OPTMASK = 1
     directory = 'parallel'
     if wfit:
         directory = 'M0DIF'
+        OPTMASK = 6
+    elif debug:
+        OPTMASK = 4
 
-    if wfit:
-        realdataout = f'{directory}/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
-        simdataout = f'{directory}/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
-        mapsout = f'{directory}/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
-        subprocess_log_data = f'{directory}/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
-        subprocess_log_sim = f'{directory}/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()  
-    else:
-        realdataout = f'{directory}/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
-        simdataout = f'{directory}/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
-        mapsout = f'{directory}/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
-        subprocess_log_data = f'{directory}/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
-        subprocess_log_sim = f'{directory}/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()
+    realdataout = f'{directory}/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
+    simdataout = f'{directory}/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
+    mapsout = f'{directory}/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()
+    subprocess_log_data = f'{directory}/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch()
+    subprocess_log_sim = f'{directory}/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()  
 
     arg_outtable = f"\'c(6,-0.2:0.25)*HOST_LOGMASS(2,0:20)\'"
+    GENPDF_NAMES = f'SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB,SIM_beta'
 
-    #data_input= f"SALT2mu_HIZ_DATA.input"
-    #sim_input = f"SALT2mu_HIZ_SIM.input"
+    if real:
+        cmd = f"{JOBNAME_SALT2mu} {data_input} " \
+              f"SUBPROCESS_FILES=%s,%s,%s " \
+              f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} "
+        if debug: cmd = cmd+" SUBPROCESS_OPTMASK={OPTMASK} ";
+        realdata = callSALT2mu.SALT2mu(cmd, 'NOTHING.DAT', realdataout,
+                                       subprocess_log_data, realdata=True, debug=debug)
+    else:
+        realdata = 0
+    cmd = f"{JOBNAME_SALT2mu} {sim_input} SUBPROCESS_FILES=%s,%s,%s "\
+          f"SUBPROCESS_VARNAMES_GENPDF={GENPDF_NAMES} " \
+          f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
+          f"SUBPROCESS_OPTMASK={OPTMASK} " \
+          f"SUBPROCESS_SIMREF_FILE=/scratch/midway2/rkessler/PIPPIN_OUTPUT/HIGH-REDSHIFT-BOUND/1_SIM/SIMDES_4D_BS20/PIP_HIGH-REDSHIFT-BOUND_SIMDES_4D_BS20.input " 
+    
+    connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim, debug=debug )
 
+    if not real: #connection is an object that is equal to SUBPROCESS_SIM/DATA
+        connection.getResult() #Gets result, as it were
 
-#    arg_outtable = f"screm"
+    return realdata, connection
 
-    if wfit:
+##### Old stuff down here
+"""    if wfit:
         if real:
             cmd = f"{JOBNAME_SALT2mu} {data_input} " \
                   f"SUBPROCESS_FILES=%s,%s,%s " \
@@ -399,7 +414,7 @@ def init_connection(index,real=True,debug=False):
         connection.getResult() #Gets result, as it were
 
     return realdata, connection
-
+"""
 def connection_prepare(connection): #probably works. Iteration issues, needs to line up with SALT2mu and such. 
     connection.iter+=1 #tick up iteration by one 
     connection.write_iterbegin() #open SOMETHING.DAT for that iteration
