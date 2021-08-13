@@ -32,14 +32,16 @@ os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in em
 
 #switching between bound and unbound involves editing inp_params, tempin, sim_input, and the init_connection file
 inp_params = ['c', 'RV', 'EBVZ', 'beta']
+
 #tempin = [-0.07372071,  0.05470099,  2.14175912,  1.06861188,  1.54413064,  0.39776982, 0.12459312,  0.13753596, 2.0, .35]
-tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3, .13, .13, .13, .21, 2.0, .35] 
+#tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3, .13, .13, .13, .21, 2.0, .35] 
 #tempin = [-0.07372071,  .02,  2.14175912,  1.06861188,  1.54413064,  0.39776982, 0.12459312,  0.13753596, .12, .14, 2.0, .35]
 tempin = [-0.07478121,  0.05038964,  1.88575588,  2.26321848,  1.72849619,  1.13732639, 0.08549067,  0.11739132,  0.1115375,   0.12054095,  2.01261982,  0.31081618]  
 
 ncbins = 6
 data_input= f"SALT2mu_ALL_DATA.input"
 sim_input = f"SALT2mu_ALL_BOUND.input"
+sim_input = f"SALT2mu_ALL_SIMDATA.input"
 previous_samples = 'chains/SALT2mu_ALL_DATA-samples.npz'
 
 ##################################################################################################################
@@ -58,6 +60,13 @@ stretch = False
 wfit = False 
 single = False
 shotnoise = False 
+conv = False 
+
+if '--conv' in sys.argv:
+    debug = True
+    single = True
+    inp_params = []
+    tempin = []
 
 if '--debug' in sys.argv:
     debug = True
@@ -95,6 +104,9 @@ cleandict = {'c_m':[-0.03, 0.03, False, [-0.3,0.3]], 'c_l':[0.044, 0.03, True, [
              'beta_m':[2, 0.5, False, [1,3]], 'beta_std':[.2, .1, False, [0, 1]],
              'EBVZL_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBVZL_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
              'EBVZH_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBVZH_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
+             'EBV_mu_low':[], 'EBV_std_low':[], 'EBV_mu_high':[], 'EBV_std_high':[],
+             'EBVZL_mu_low':[], 'EBVZL_std_low':[], 'EBVZL_mu_high':[], 'EBVZL_std_high':[],
+             'EBVZH_mu_low':[], 'EBVZH_std_low':[], 'EBVZH_mu_high':[], 'EBVZH_std_high':[],
 }
 
 
@@ -167,7 +179,6 @@ def dffixer(df, RET):
     
     
     for q in np.unique(df.ibin_c.values):                                       
-        #print(q, np.sum(df.loc[df.ibin_c == q].NEVT))    
         cpops.append(np.sum(df.loc[df.ibin_c == q].NEVT))
         
     cpops = np.array(cpops)
@@ -326,7 +337,7 @@ def init_connection(index,real=True,debug=False):
         directory = 'M0DIF'
         OPTMASK = 6
     elif debug:
-        OPTMASK = 4
+        OPTMASK = 1
 
     realdataout = f'{directory}/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
     simdataout = f'{directory}/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
@@ -463,22 +474,30 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         if connection == False: #For MCMC running, will pick up a connection
             sys.stdout.flush()
             connection = connections[(current_process()._identity[0]-1)]#formerly connections[(current_process()._identity[0]-1) % len(connections)] 
-            #print('DEBUG!', os.getpid(), 'PID', (current_process()._identity[0]-1), 'Connection')
             sys.stdout.flush()
 
         connection = connection_prepare(connection) #cycle iteration, open SOMETHING.DAT
         print('writing 1d pdf',flush=True)
-        #connection.write_1D_PDF('SIM_c',[c,cl,cr],carr) #This writes SOMETHING.DAT
-        #connection.write_1D_PDF('SIM_x1',[x,xl,xr],xarr) #THIS IS WHERE TO ADD MORE PARAMETERS
         for inp in inp_params: #TODO - need to generalise to 2d functions as well
             if 'RV' in inp:
                 #connection.write_2D_Mass_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
                 connection.write_2D_Mass_PDF_SYMMETRIC(simdic[inp], thetawriter(theta, inp), arrdic[inp])
             elif 'EBV' in inp:
                 if splitEBV: #need to hold here to pass off both EBVZH and EBVZL simultaneously 
-                    connection.write_3D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+                    if len(thetawriter(theta, inp)) == 4:
+                        print("Using Exponential EBV model", flush=True)
+                        connection.write_3D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+                    else:
+                        print("Using LOGNORMLA EBV model", flush=True)
+                        connection.write_3D_LOGNORMAL_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
                 else:
-                    connection.write_2D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+                    if len(thetawriter(theta, inp)) == 2:
+                        print("Using Exponential EBV model", flush=True)
+                        connection.write_2D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
+                    else:
+                        print("Using LOGNORMAL EBV model", flush=True)  
+                        connection.write_2D_LOGNORMAL_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp]) 
+
             elif ('alpha' in inp) or ('beta' in inp):
                 #print(inp, 'allegedly only beta or alpha')
                 connection.write_SALT2(inp, thetawriter(theta, inp))
@@ -507,9 +526,6 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         except AttributeError:
             print("WARNING! We tripped an AttributeError here.")
             if debug:
-                tc = init_connection(0,real=False,debug=debug)[1] #set this back to debug=debug                       
-                connections[0] = tc
-                tempin = np.abs(random.choice([1, .1]) * np.random.randn(nwalkers, ndim))[0]             
                 print('inp', tempin)                 
                 return -np.inf
             else:
@@ -537,8 +553,6 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         if debug:
             print('WARNING! we landed in a Broken Pipe error')
             quit()
-            tc = init_connection(299,real=False,debug=True)[1]
-            return log_likelihood(tempin, connection=tc,returnall=True)
         else:
             print('WARNING! Slurm Broken Pipe Error!') #REGENERATE THE CONNECTION 
             print('before regenerating')
@@ -639,11 +653,33 @@ realsigint = realdata.sigint
 realsiginterr = 0.01
 
 
-if doplot:    
+if doplot: #add LL v step number here     
     past_results = np.load(previous_samples)            
     past_results = past_results.f.arr_0
     Criteria_Plotter(tempin)               
     pltting_func(past_results, inp_params) 
+    tc = init_connection(299,real=False,debug=True)[1]   
+    stepnum = []
+    LLnum = []
+    numElems = 200
+    flat_samples = past_results.reshape(-1, past_results.shape[-1])
+    idx = np.round(np.linspace(0, len(flat_samples) - 1, numElems)).astype(int)
+    print("Starting Step vs LL calculation", flush=True)
+    for stepp in idx:  
+        print(f"Step is {stepp}")
+        stepnum.append(stepp)
+        stepp = flat_samples[stepp]
+        chisq = log_likelihood((stepp),returnall=False,connection=tc)
+        LLnum.append(chisq)
+    LLnum = np.array(LLnum)
+    stepnum = np.array(stepnum)
+    plt.clf()
+    plt.plot(stepnum, LLnum) 
+    plt.xlabel('Step Number')  
+    plt.ylabel('Log Likelihood')   
+    plt.savefig('figures/'+data_input.split('.')[0]+'_step_vs_LL.png')   
+    print('upload figures/step_vs_LL.png') 
+    plt.close()  
     print('done')
     quit()
 

@@ -98,6 +98,7 @@ class SALT2mu: #I understand classes better now
                 if str(self.ready) in stdout_line:
                     #self.data = self.getData()
                     return
+    
             else:
                 #if self.ready2%(self.iter-1) in stdout_line:
                 if str(self.ready) in stdout_line:
@@ -115,6 +116,7 @@ class SALT2mu: #I understand classes better now
         self.beta = float(text.split('beta0')[1].split()[1])
         self.betaerr = float(text.split('beta0')[1].split()[3])
         self.maxprob = float(text.split('MAXPROB_RATIO')[1].split()[1])
+        #print(self.maxprob)
         self.headerinfo = self.NAndR(StringIO(text))
         self.sigint = float(text.split('sigint')[1].split()[1])
         #self.cbindf = pd.read_csv(StringIO(text),comment='#',delim_whitespace=True) #this appears to be the fitres file 
@@ -129,6 +131,11 @@ class SALT2mu: #I understand classes better now
 
     def get_1d_exponential(self, tau, arr):
         probs = (tau**-1)*np.exp(-arr/tau)
+        probs = probs/np.max(probs)
+        return arr, probs
+
+    def get_1d_lognormal(self, mu, std, arr):
+        probs = np.exp(mu + std*arr)
         probs = probs/np.max(probs)
         return arr, probs
 
@@ -249,6 +256,19 @@ class SALT2mu: #I understand classes better now
                 self.write2Dprobs(arr,mass,probs)
         self.crosstalkfile.write('\n')
 
+    def write_2D_LOGNORMAL_PDF(self, varname, PARAMS, arr):
+        self.writeheader([varname, 'HOST_LOGMASS']) 
+        Lmu, Lstd = PARAMS[0,1]
+        Hmu, Hstd = PARAMS[2,3]    
+        for mass in massarr:   
+            if mass < 10:   
+                arr,probs = self.get_1d_lognormal(Lmu, Lstd, arr) 
+                self.write2Dprobs(arr,mass,probs)  
+            else: 
+                arr,probs = self.get_1d_lognormal(Hmu, Hstd, arr)
+                self.write2Dprobs(arr,mass,probs)
+        self.crosstalkfile.write('\n')  
+
     def write_3D_MassEBV_PDF(self, varname, PARAMS, arr):   #for when EBV needs a z split
         self.writeheader([varname, 'SIM_ZCMB', 'HOST_LOGMASS']) #needs work   
         LZ_LTau = PARAMS[0]    
@@ -272,6 +292,28 @@ class SALT2mu: #I understand classes better now
                     else:    
                         arr,probs = self.get_1d_exponential(HZ_HTau,arr) 
                         self.write3Dprobs(arr,z,mass,probs)  
+        self.crosstalkfile.write('\n') 
+
+    def write_3D_LOGNORMAL_PDF(self, varname, PARAMS, arr):   #for when EBV needs a z split 
+        self.writeheader([varname, 'SIM_ZCMB', 'HOST_LOGMASS']) #needs work  
+        LZ_Lmu, LZ_Lstd, LZ_Hmu, LZ_Hstd, HZ_Lmu, HZ_Lstd, HZ_Hmu, HZ_Hstd = PARAMS 
+        for z in zarr:    
+            if np.around(z,3) < 0.1:      
+                for mass in massarr:  
+                    if mass < 10:      
+                        arr,probs = self.get_1d_lognormal(LZ_Lmu,LZ_Lstd,arr)      
+                        self.write3Dprobs(arr,z,mass,probs)     
+                    else:      
+                        arr,probs = self.get_1d_lognormal(LZ_Hmu,LZ_Hstd,arr)   
+                        self.write3Dprobs(arr,z,mass,probs)                
+            else:    
+                for mass in massarr:    
+                    if mass < 10:  
+                        arr,probs = self.get_1d_lognormal(HZ_Lmu,HZ_Lstd,arr)    
+                        self.write3Dprobs(arr,z,mass,probs)  
+                    else:    
+                        arr,probs = self.get_1d_lognormal(HZ_Hmu,HZ_Hstd,arr) 
+                        self.write3Dprobs(arr,z,mass,probs)   
         self.crosstalkfile.write('\n') 
 
     def write_2D_PDF(self, varname, LOWPARAMS, HIGHPARAMS, arr):     
