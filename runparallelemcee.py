@@ -19,6 +19,7 @@ from multiprocessing import cpu_count
 import emcee
 import time 
 import psutil
+import pickle
 
 #################################################################################################################
 ############################################## INPUT STUFF ######################################################
@@ -34,14 +35,16 @@ os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in em
 inp_params = ['c', 'RV', 'EBVZ', 'beta']
 
 #tempin = [-0.07372071,  0.05470099,  2.14175912,  1.06861188,  1.54413064,  0.39776982, 0.12459312,  0.13753596, 2.0, .35]
-#tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3, .13, .13, .13, .21, 2.0, .35] 
-#tempin = [-0.07372071,  .02,  2.14175912,  1.06861188,  1.54413064,  0.39776982, 0.12459312,  0.13753596, .12, .14, 2.0, .35]
-tempin = [-0.07478121,  0.05038964,  1.88575588,  2.26321848,  1.72849619,  1.13732639, 0.08549067,  0.11739132,  0.1115375,   0.12054095,  2.01261982,  0.31081618]  
+tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3, .13, .13, .13, .21, 2.0, .35] 
+tempin = [-0.08, 0.05, 2.51, 1.29, 1.74, 1.25, 0.09, 0.12, 0.14, 0.13, 1.3, 0.33] 
+#tempin =  [-0.08054124,  0.05529007,  2.68507439,  1.1151461,   2.1450341,  0.89803876,  0.08695682,  0.12562315,  0.15252728,  0.15220695,  1.42881834,  0.10983637]
+#tempin = [-0.08871752,  0.05625634,  3.13948605,  1.09072544,  2.68130054,  0.91598184,  0.08731259,  0.11864814,  0.15481213,  0.15181887,  1.46617739,  0.06623853] 
+#tempin = [-0.08871752,  0.05625634,  2.948605,  1.072544,  1.58130054,  1.0598184, 0.08731259,  0.11864814,  0.12481213,  0.12181887,  1.86617739,  0.26623853]
 
 ncbins = 6
 data_input= f"SALT2mu_ALL_DATA.input"
 sim_input = f"SALT2mu_ALL_BOUND.input"
-sim_input = f"SALT2mu_ALL_SIMDATA.input"
+#sim_input = f"SALT2mu_ALL_SIMDATA.input"
 previous_samples = 'chains/SALT2mu_ALL_DATA-samples.npz'
 
 ##################################################################################################################
@@ -96,7 +99,7 @@ paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Ta
 
 #cleandict is ironically named at this point as it's gotten more and more unwieldy. It is designed to contain the following:
 #first entry is starting mean value for walkers. Second is the walker std. Third is whether or not the value needs to be positive (eg stds). Fourth is a list containing the lower and upper valid bounds for that parameter.
-cleandict = {'c_m':[-0.03, 0.03, False, [-0.3,0.3]], 'c_l':[0.044, 0.03, True, [0.01,0.2]], 'c_r':[0.044, 0.03, True, [0.01,0.2]], 'c_std':[0.044, 0.03, True, [0.01, 0.2]],
+cleandict = {'c_m':[-0.06, 0.02, False, [-0.3,-0.04]], 'c_l':[0.044, 0.03, True, [0.01,0.2]], 'c_r':[0.044, 0.03, True, [0.01,0.2]], 'c_std':[0.044, 0.03, True, [0.01, 0.2]],
              'x1_m':[0,0.05, False, [-2,2]], 'x1_l':[1,1, True, [0.01,2]], 'x1_r':[1,1, True, [0.01,2]], 
              'EBV_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBV_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
              'RV_m_low':[2, 0.5, True, [0.8, 4]], 'RV_l_low':[1, 0.5, True, [0.1, 4]], 'RV_r_low':[1, 0.5, True, [0.1, 4]], 'RV_std_low':[1, 0.5, True, [0.1,4]],
@@ -202,7 +205,7 @@ def LL_Creator(inparr, simbeta, simsigint, returnall_2=False): #takes a list of 
     print('real beta, sim beta, real beta error', realbeta, simbeta, realbetaerr)
     sys.stdout.flush()
     LL_Beta = -0.5 * ((realbeta - simbeta) ** 2 / realbetaerr**2) 
-    LL_sigint = -0.5 * ((realsigint - simsigint) ** 2 / realsiginterr**2) * 2
+    LL_sigint = -0.5 * ((realsigint - simsigint) ** 2 / realsiginterr**2) #* 2
     thetaconverter(inp_params)
     for n, i in enumerate(inparr):    
         if n == 0: #colour
@@ -244,7 +247,7 @@ def pltting_func(samples, inp_params):
     labels = pconv(inp_params)  
     ndim = len(labels)
     plt.clf()                               
-    fig, axes = plt.subplots(ndim, figsize=(3*ndim, 7), sharex=True) 
+    fig, axes = plt.subplots(ndim, figsize=(10, 2*ndim), sharex=True) 
     for it in range(ndim): 
         ax = axes[it]      
         ax.plot(samples[:, :, it], "k", alpha=0.3)                                              
@@ -252,9 +255,9 @@ def pltting_func(samples, inp_params):
         ax.set_ylabel(labels[it])                                                               
         ax.yaxis.set_label_coords(-0.1, 0.5)                                                    
                                
-    axes[-1].set_xlabel("step number");                                                         
-    plt.savefig('figures/'+data_input.split('.')[0]+'-chains.png')                                                           
-    print('upload figures/chains.png')   
+    axes[-1].set_xlabel("step number");                                                        
+    plt.savefig('figures/'+data_input.split('.')[0]+'-chains.pdf', bbox_inches='tight')  
+    print('upload figures/chains.pdf')  
     plt.close()
                                
     flat_samples = samples.reshape(-1, samples.shape[-1])                           
@@ -262,9 +265,9 @@ def pltting_func(samples, inp_params):
     plt.clf()              
     fig = corner.corner(   
         flat_samples, labels=labels, smooth=True                                                             
-    );                     
-    plt.savefig('figures/'+data_input.split('.')[0]+'-corner.png')                                              
-    print('upload figures/corner.png')                                                          
+    );       
+    plt.savefig('figures/'+data_input.split('.')[0]+'-corner.pdf')    
+    print('upload figures/corner.pdf')                                
     plt.close()
     #plt.show()
 
@@ -279,47 +282,36 @@ def Criteria_Plotter(theta):
     if debug: print('RESULT!', chisq, flush=True)
     sys.stdout.flush()
 
-    ######## Colour Histogram
-    plt.clf()
-    plt.errorbar(cbins, datacount_list[0], yerr =(poisson_list[0]), fmt='o', c='k', label='REAL DATA')
-    plt.plot(cbins, simcount_list[0], c='darkgreen',label='SIMULATION')
-    plt.legend()
-    plt.xlabel('c')
-    plt.ylabel('Count')
-    plt.savefig('figures/'+data_input.split('.')[0]+'overplot_observed_DATA_SIM_c.png')         
-    print('upload figures/overplot_observed_DATA_SIM_c.png')   
-    plt.close() 
+    fig, axs = plt.subplots(1, 3, figsize=(15,4))     
+    ##### Colour Hist     
+    ax = axs[0]  
+    ax.errorbar(cbins, datacount_list[0], yerr =(poisson_list[0]), fmt='o', c='darkmagenta', label='Data') 
+    ax.plot(cbins, simcount_list[0], c='dimgray',label='Simulation') 
+    ax.legend()                                                                                        
+    ax.set_xlabel('c')                                                                                
+    ax.set_ylabel('Count')                                   
+    ###### MURES hi and lo                                                        
+    ax = axs[1]                    
+    ax.errorbar(cbins, datacount_list[1], yerr =(poisson_list[1]), fmt='^', c='k', label='Data, High Mass')
+    ax.plot(cbins, simcount_list[1], c='tab:orange',label='Simulation, High Mass', ls='--')  
+    ax.errorbar(cbins, datacount_list[2], yerr =(poisson_list[2]), fmt='s', c='tab:green', label='Data, Low Mass')     
+    ax.plot(cbins, simcount_list[2], c='tab:blue',label='Simulation, Low Mass') 
+    ax.legend(bbox_to_anchor=[1.7,1.2], ncol=2) 
+    ax.set_xlabel('c')  
+    ax.set_ylabel('MURES')  
+    ####### RMS hi and lo       
+    ax = axs[2]           
+    ax.errorbar(cbins, datacount_list[3], yerr =(poisson_list[3]), fmt='^', c='k', label='REAL DATA HIMASS')  
+    ax.plot(cbins, simcount_list[3], c='tab:orange',label='SIMULATION HIMASS', ls='--')   
+    ax.errorbar(cbins, datacount_list[4], yerr =(poisson_list[4]), fmt='s', c='tab:green', label='REAL DATA LOWMASS') 
+    ax.plot(cbins, simcount_list[4], c='tab:blue',label='SIMULATION LOWMASS')    
+    ax.set_xlabel('c')      
+    ax.set_ylabel('MURES RMS')
+    fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=.25, hspace=None)
+    plt.savefig('figures/'+data_input.split('.')[0]+'overplot_observed_DATA_SIM_OVERVIEW.pdf', pad_inches=0.01, bbox_inches='tight')
+    print('upload figures/overplot_observed_DATA_SIM_OVERVIEW.pdf') 
+    plt.close()   
 
-    ####### MURES hi and lo
-    plt.clf()          
-    if debug: print('DEBUG!',len(cbins), len(datacount_list[1]), len(poisson_list[1]))
-    sys.stdout.flush()
-    plt.errorbar(cbins, datacount_list[1], yerr =(poisson_list[1]), fmt='o', c='k', label='REAL DATA HIMASS')            
-    plt.plot(cbins, simcount_list[1], c='tab:orange',label='SIMULATION HIMASS')      
-
-    plt.errorbar(cbins, datacount_list[2], yerr =(poisson_list[1]), fmt='o', c='tab:green', label='REAL DATA LOWMASS')
-    plt.plot(cbins, simcount_list[2], c='tab:blue',label='SIMULATION LOWMASS') 
-    plt.legend()        
-    plt.xlabel('c')   
-    plt.ylabel('MURES')   
-    plt.savefig('figures/'+data_input.split('.')[0]+'overplot_observed_DATA_SIM_cvMURES.png')   
-    print('upload figures/overplot_observed_DATA_SIM_cvMURES.png')        
-    plt.close()  
-
-    ####### RMS hi and lo 
-    plt.clf()    
-    plt.errorbar(cbins, datacount_list[3], yerr =(poisson_list[3]), fmt='o', c='k', label='REAL DATA HIMASS')   
-    plt.plot(cbins, simcount_list[3], c='tab:orange',label='SIMULATION HIMASS')  
-
-    plt.errorbar(cbins, datacount_list[4], yerr =(poisson_list[4]), fmt='o', c='tab:green', label='REAL DATA LOWMASS') 
-    plt.plot(cbins, simcount_list[4], c='tab:blue',label='SIMULATION LOWMASS')
-    plt.legend()     
-    plt.xlabel('c')   
-    plt.ylabel('RMS')   
-    plt.savefig('figures/'+data_input.split('.')[0]+'overplot_observed_DATA_SIM_cvRMS.png')   
-    print('upload figures/overplot_observed_DATA_SIM_cvRMS.png')         
-    plt.close() 
-    
     return 'Done'
 
 
@@ -331,13 +323,15 @@ def Criteria_Plotter(theta):
 def init_connection(index,real=True,debug=False):
     #Creates an open connection instance with SALT2mu.exe
 
-    OPTMASK = 1
+    OPTMASK = 4
     directory = 'parallel'
     if wfit:
         directory = 'M0DIF'
         OPTMASK = 6
     elif debug:
         OPTMASK = 1
+    elif single:
+        OPTMASK = 5
 
     realdataout = f'{directory}/%d_SUBPROCESS_REALDATA_OUT.DAT'%index; Path(realdataout).touch()
     simdataout = f'{directory}/%d_SUBROCESS_SIM_OUT.DAT'%index; Path(simdataout).touch()
@@ -513,7 +507,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         print('got result', flush=True)
         ####AAAAAAAAA
         if connection.maxprob > 1.001:    
-            print(connection.maxprob, 'MAXPROB parameter greater than 1! Coming up against the bounding function! Returning -np.inf to account, caught right after connection', flush=True)    
+            print(connection.maxprob, 'MAXPROB parameter greater than 1! Coming up against the bounding function! Returning -np.inf to account, caught right after connection', flush=True)
             return -np.inf 
         #print(connection.maxprob, flush=True)
         try:
@@ -565,12 +559,12 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
 
     if returnall:
         out_result = LL_Creator(resparr, connection.beta, connection.sigint)  
-        print("for", theta, "we found an LL of", out_result)            
+        print("for ", pconv(inp_params), theta, " we found an LL of", out_result)            
         sys.stdout.flush()
         return LL_Creator(resparr, connection.beta, connection.sigint, returnall)
     else:
         out_result = LL_Creator(resparr, connection.beta, connection.sigint)
-        print("for", theta, "we found an LL of", out_result)
+        print("for ", pconv(inp_params), " LL = ", theta, "we found an LL of", out_result)
         sys.stdout.flush()
         return out_result
 
@@ -658,6 +652,7 @@ if doplot: #add LL v step number here
     past_results = past_results.f.arr_0
     Criteria_Plotter(tempin)               
     pltting_func(past_results, inp_params) 
+    #print("quitting after making the chains and corner.")
     tc = init_connection(299,real=False,debug=True)[1]   
     stepnum = []
     LLnum = []
@@ -713,7 +708,10 @@ if wfit:
         f = open('LL_List', 'a')
         print('starting M0DIF ', i)
         #print(tempin[i])
-        chisq, datacount_list, simcount_list, poisson_list = log_likelihood((tempin[i]),returnall=True,connection=tc)  
+        try:
+            chisq, datacount_list, simcount_list, poisson_list = log_likelihood((tempin[i]),returnall=True,connection=tc)  
+        except TypeError:
+            chisq = -999
         print('RESULT!', chisq, flush=True) 
         bigstr = ''
         bigstr += str(i)+' '+str(np.sum(chisq))
@@ -758,20 +756,21 @@ if debug: ##### --debug
 with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in parallel on batch jobs. 
     #Instantiate the sampler once (in parallel)
     sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, pool=pool)
+    #sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, moves=emcee.moves.KDEMove, pool=pool)
 
-    for qb in range(20):
+    for qb in range(50):
         print("Starting loop iteration", qb)
         print('begun', cpu_count(), "CPUs with", nwalkers, ndim, "walkers and dimensions")
-        #print(psutil.virtual_memory().available * 100 / psutil.virtual_memory().total, "is the percentage of memory used")
         sys.stdout.flush()
         #Run the sampler
         if qb == 0:
             state = sampler.run_mcmc(pos, 100, progress=True) #There used to be a semicolon here for some reason 
-            print('Finished burn-in!')
-            sampler.reset()
-            sampler.run_mcmc(state, 100, progress=True)
+            pickle.dump(sampler, open( "sampler_burn.pkl", "wb" ) )
+#            print('Finished burn-in!')
+#            sampler.reset()
+#            sampler.run_mcmc(None, 100, progress=True)
         else:
-            state = sampler.run_mcmc(state, 100, progress=True)
+            state = sampler.run_mcmc(None, 100, progress=True)
 
         #May need to implement a proper burn-in 
         sys.stdout.flush() 
@@ -779,7 +778,8 @@ with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in pa
         #Save the output for later
         samples = sampler.get_chain()
         pos = samples[-1,:,:]
-        np.savez(data_input.split('.')[0]+'-samples.npz',samples)
+        np.savez('chains/'+data_input.split('.')[0]+'-samples.npz',samples)
+        pickle.dump(sampler, open( "sampler_v1.pkl", "wb" ) )
         #print(pos, "New samples as input for next run")
 
         print(pos[0])

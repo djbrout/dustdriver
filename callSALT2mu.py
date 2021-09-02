@@ -23,7 +23,7 @@ def setup_custom_logger(name, screen=False):
 
 
 massarr = np.arange(5.,15.,1)
-zarr = np.linspace(-1.9,2.1,3) #further edit me 
+zarr = np.linspace(-2.4,2.6,3)
 
 class SALT2mu: #I understand classes better now
     def __init__(self,command,mapsout,SALT2muout,log,realdata=False,debug=False): #setting all sorts of class values
@@ -184,7 +184,7 @@ class SALT2mu: #I understand classes better now
         if name == 'alpha':
             self.crosstalkfile.write(f"GENRANGE_SIM_{name}: .1 .2 \n")
         else:
-            self.crosstalkfile.write(f"GENRANGE_SIM_{name}: 1 3 \n")
+            self.crosstalkfile.write(f"GENRANGE_SIM_{name}: .4 3 \n")
         for tm in range(3):
             self.crosstalkfile.write("\n")
 
