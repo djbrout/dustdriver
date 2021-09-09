@@ -34,12 +34,21 @@ os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in em
 #switching between bound and unbound involves editing inp_params, tempin, sim_input, and the init_connection file
 inp_params = ['c', 'RV', 'EBVZ', 'beta']
 
-#tempin = [-0.07372071,  0.05470099,  2.14175912,  1.06861188,  1.54413064,  0.39776982, 0.12459312,  0.13753596, 2.0, .35]
-tempin = [-0.084,  0.042, 2.75,  1.3,  1.5,  1.3, .13, .13, .13, .21, 2.0, .35] 
-tempin = [-0.08, 0.05, 2.51, 1.29, 1.74, 1.25, 0.09, 0.12, 0.14, 0.13, 1.3, 0.33] 
-#tempin =  [-0.08054124,  0.05529007,  2.68507439,  1.1151461,   2.1450341,  0.89803876,  0.08695682,  0.12562315,  0.15252728,  0.15220695,  1.42881834,  0.10983637]
-#tempin = [-0.08871752,  0.05625634,  3.13948605,  1.09072544,  2.68130054,  0.91598184,  0.08731259,  0.11864814,  0.15481213,  0.15181887,  1.46617739,  0.06623853] 
-#tempin = [-0.08871752,  0.05625634,  2.948605,  1.072544,  1.58130054,  1.0598184, 0.08731259,  0.11864814,  0.12481213,  0.12181887,  1.86617739,  0.26623853]
+#override = {'beta_std':.1, 'RV_m_low':2} #Currently, beta is a single parameter, beta_m, with beta_std = 0.1 fixed.
+override = {}
+
+
+tempin = [-0.087,  0.049,  2.927,  0.76 ,  1.641,  1.086,  0.141,  0.165, 0.107,  0.111,  1.717, .1] #best fit from mode as of 9/8/21
+
+tempin = [-0.08738571,  0.04878399,  2.98495926,  0.65599946,  1.66692716,
+        1.12172734,  0.14387056,  0.15565397,  0.10356371,  0.10651039,
+        1.77972237,  0.1       ]
+tempin = [-0.08713591,  0.04991463,  2.80580627,  0.80381341,  1.67601708,
+        1.01811007,  0.14448732,  0.1675189 ,  0.09824611,  0.10416626,
+        1.76697904,  0.1       ]
+tempin = [-0.08491976,  0.05072781,  2.72127198,  0.67185438,  1.58175183,
+        1.06719006,  0.14485089,  0.16165031,  0.10571498,  0.1104536 ,
+        1.69251404,  0.1       ]
 
 ncbins = 6
 data_input= f"SALT2mu_ALL_DATA.input"
@@ -95,7 +104,7 @@ if '--shotnoise' in sys.argv:
 ####################################################################################################################
 
 #paramdict is hard coded to take the input parameters and expand into the necessary variables to properly model those 
-paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_std_low', 'RV_m_high','RV_std_high'], 'beta':['beta_m','beta_std'], 'EBVZ':['EBVZL_Tau_low','EBVZL_Tau_high', 'EBVZH_Tau_low','EBVZH_Tau_high']}
+paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Tau_low','EBV_Tau_high'], 'RV':['RV_m_low','RV_std_low', 'RV_m_high','RV_std_high'], 'beta':['beta_m', 'beta_std'], 'EBVZ':['EBVZL_Tau_low','EBVZL_Tau_high', 'EBVZH_Tau_low','EBVZH_Tau_high']}
 
 #cleandict is ironically named at this point as it's gotten more and more unwieldy. It is designed to contain the following:
 #first entry is starting mean value for walkers. Second is the walker std. Third is whether or not the value needs to be positive (eg stds). Fourth is a list containing the lower and upper valid bounds for that parameter.
@@ -139,11 +148,14 @@ def thetawriter(theta, key, names=False): #this does the splitting that thetacon
     if names:
         return names[lowbound:highbound]
     else:
-        return (theta[lowbound:highbound])
+        return (theta[lowbound:highbound]) #Returns theta in the range of first to last index for relevant parameter. For example, inp_param = ['c', 'RV'], thetawriter(theta, 'c') would give theta[0:2] which is ['c_m', 'c_std'] 
 
 
-def input_cleaner(inp_params, cleandict): #this function takes in the input parameters and generates the walkers with appropriate dimensions, starting points, walkers, and step size 
+def input_cleaner(inp_params, cleandict,override): #this function takes in the input parameters and generates the walkers with appropriate dimensions, starting points, walkers, and step size 
     plist = pconv(inp_params)
+    for element in override.keys():  
+        print(element)
+        plist.remove(element)
     pos = np.abs(0.1 * np.random.randn(len(plist)*2, len(plist)))
     for entry in range(len(plist)):
         newpos_param = cleandict[plist[entry]]
@@ -461,9 +473,14 @@ xarr = np.arange(-5,5,.01)
 ##########################################################################################################################
 def log_likelihood(theta,connection=False,returnall=False,pid=0):
     print('inside loglike',flush=True)
-#    c,cl,cr,x,xl,xr = theta #will need to fix this up as well, as to not have it hard coded.
-    #c,cl,cr = theta
+    print(type(theta), 'is the thing that theta is', flush=True)
     thetadict = thetaconverter(theta)
+    for elem in override.keys():
+        print(elem, flush=True)
+        position = (pconv(inp_params).index(elem))
+        theta.insert(position, override[elem])
+
+    #here try and use theta.insert(position, element) to put the override value back where we expect it to be 
     try:
         if connection == False: #For MCMC running, will pick up a connection
             sys.stdout.flush()
@@ -482,7 +499,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
                         print("Using Exponential EBV model", flush=True)
                         connection.write_3D_MassEBV_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
                     else:
-                        print("Using LOGNORMLA EBV model", flush=True)
+                        print("Using LOGNORMAL EBV model", flush=True)
                         connection.write_3D_LOGNORMAL_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp])
                 else:
                     if len(thetawriter(theta, inp)) == 2:
@@ -493,7 +510,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
                         connection.write_2D_LOGNORMAL_PDF(simdic[inp], thetawriter(theta, inp), arrdic[inp]) 
 
             elif ('alpha' in inp) or ('beta' in inp):
-                #print(inp, 'allegedly only beta or alpha')
+                #connection.write_SALT2(inp, thetawriter(theta, inp))
                 connection.write_SALT2(inp, thetawriter(theta, inp))
             else:
                 #print(inp)
@@ -619,7 +636,7 @@ def log_probability(theta):
 #ndim = len(pconv(inp_params))
 #nwalkers = ndim*2
 
-pos, nwalkers, ndim = input_cleaner(inp_params, cleandict)
+pos, nwalkers, ndim = input_cleaner(inp_params, cleandict,override)
 
 if resume == True: #This needs to be generalised to more than just a 6x3 grid, but it works for now
     past_results = np.load(previous_samples)
@@ -765,7 +782,7 @@ with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in pa
         #Run the sampler
         if qb == 0:
             state = sampler.run_mcmc(pos, 100, progress=True) #There used to be a semicolon here for some reason 
-            pickle.dump(sampler, open( "sampler_burn.pkl", "wb" ) )
+#            pickle.dump(sampler, open( "sampler_burn.pkl", "wb" ) )
 #            print('Finished burn-in!')
 #            sampler.reset()
 #            sampler.run_mcmc(None, 100, progress=True)
@@ -779,7 +796,7 @@ with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in pa
         samples = sampler.get_chain()
         pos = samples[-1,:,:]
         np.savez('chains/'+data_input.split('.')[0]+'-samples.npz',samples)
-        pickle.dump(sampler, open( "sampler_v1.pkl", "wb" ) )
+#        pickle.dump(sampler, open( "sampler_v1.pkl", "wb" ) )
         #print(pos, "New samples as input for next run")
 
         print(pos[0])
