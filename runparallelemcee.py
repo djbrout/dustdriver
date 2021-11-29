@@ -31,30 +31,41 @@ JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code
 os.environ["OMP_NUM_THREADS"] = "1" #This is important for parallelization in emcee 
 
 
+#search REMEMBERME for details
+
 #switching between bound and unbound involves editing inp_params, tempin, sim_input, and the init_connection file
 inp_params = ['c', 'RV', 'EBVZ', 'beta']
 
 #override = {'beta_std':.1, 'RV_m_low':2} #Currently, beta is a single parameter, beta_m, with beta_std = 0.1 fixed.
 override = {}
 
+#tempin = [-0.084, 0.042, 2.75, 1, 1.5, .8, .13, .21, .1, .13, 2, .35] #Best fit from hand cranking
 
-tempin = [-0.087,  0.049,  2.927,  0.76 ,  1.641,  1.086,  0.141,  0.165, 0.107,  0.111,  1.717, .1] #best fit from mode as of 9/8/21
+tempin = [-0.08228174,  0.05244057,  3.13490322,  0.96997238,  2.20676457,  0.78512475,
+  0.11424094,  0.10428891,  0.09274349,  0.10345058,  1.85968678,  0.32786696] #4th best from 10/2 fit, starts at -39 and gives -72.8
 
-tempin = [-0.08738571,  0.04878399,  2.98495926,  0.65599946,  1.66692716,
-        1.12172734,  0.14387056,  0.15565397,  0.10356371,  0.10651039,
-        1.77972237,  0.1       ]
-tempin = [-0.08713591,  0.04991463,  2.80580627,  0.80381341,  1.67601708,
-        1.01811007,  0.14448732,  0.1675189 ,  0.09824611,  0.10416626,
-        1.76697904,  0.1       ]
-tempin = [-0.08491976,  0.05072781,  2.72127198,  0.67185438,  1.58175183,
-        1.06719006,  0.14485089,  0.16165031,  0.10571498,  0.1104536 ,
-        1.69251404,  0.1       ]
+tempin = [-0.07537088,  0.05938626,  3.03677227,  0.5890865,   2.54588735,  0.75154847,
+  0.11902895,  0.09118924,  0.09609276,  0.10440152,  2.01780004,  0.34809447] #5th best from 10/2 fit, starts at -39 and gives -64
+
+#6th through 8th are too similar to existing ones
+
+tempin = [-0.08146689,  0.0522451,   3.05158695,  0.90358279,  2.23745804,  0.81611954,
+  0.11343721,  0.10418538,  0.0953613,   0.10626064,  1.882882,  0.32931752] #1st best from 10/2 fit - meh
+
+tempin = [-0.08643243, 0.04754009, 3.21320013, 0.88226811, 2.09682591, 0.52138876, 0.1146371, 0.16091658, 0.12858798, 0.10170863, 1.83998126, 0.10978103]
+
+tempin = [-0.08643243, 0.0554009, 3.21320013, 0.88226811, 2.09682591, 0.52138876, 0.1146371, 0.16091658, 0.12858798, 0.10170863, 1.83998126, 0.10978103]
+
+tempin = [-0.08643243, 0.0554009, 3.21320013, 0.88226811, 2.09682591, 0.52138876, 0.1146371, 0.16091658, 0.12858798, 0.10170863, 1.83998126, 0.10978103] 
+
+tempin = [-0.08673622,  0.04824269,  2.88349209,  0.6630554,   2.09076347,  0.64179942, 0.14667848,  0.08775328,  0.13831042,  0.10192135,  1.3285806,   0.5186077]
+
 
 ncbins = 6
 data_input= f"SALT2mu_ALL_DATA.input"
 sim_input = f"SALT2mu_ALL_BOUND.input"
 #sim_input = f"SALT2mu_ALL_SIMDATA.input"
-previous_samples = 'chains/SALT2mu_ALL_DATA-samples.npz'
+previous_samples = 'chains/SALT2mu_ALL_DATA-samples-full.npz'
 
 ##################################################################################################################
 ############################################# ARGPARSE ###########################################################
@@ -108,14 +119,14 @@ paramdict = {'c':['c_m', 'c_std'], 'x1':['x1_m', 'x1_l', 'x1_r'], 'EBV':['EBV_Ta
 
 #cleandict is ironically named at this point as it's gotten more and more unwieldy. It is designed to contain the following:
 #first entry is starting mean value for walkers. Second is the walker std. Third is whether or not the value needs to be positive (eg stds). Fourth is a list containing the lower and upper valid bounds for that parameter.
-cleandict = {'c_m':[-0.06, 0.02, False, [-0.3,-0.04]], 'c_l':[0.044, 0.03, True, [0.01,0.2]], 'c_r':[0.044, 0.03, True, [0.01,0.2]], 'c_std':[0.044, 0.03, True, [0.01, 0.2]],
+cleandict = {'c_m':[-0.08, 0.01, False, [-0.3,-0.04]], 'c_l':[0.044, 0.03, True, [0.01,0.2]], 'c_r':[0.044, 0.03, True, [0.01,0.2]], 'c_std':[0.044, 0.02, True, [0.01, 0.2]],
              'x1_m':[0,0.05, False, [-2,2]], 'x1_l':[1,1, True, [0.01,2]], 'x1_r':[1,1, True, [0.01,2]], 
              'EBV_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBV_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
-             'RV_m_low':[2, 0.5, True, [0.8, 4]], 'RV_l_low':[1, 0.5, True, [0.1, 4]], 'RV_r_low':[1, 0.5, True, [0.1, 4]], 'RV_std_low':[1, 0.5, True, [0.1,4]],
-             'RV_m_high':[2, 0.5, True, [0.8, 4]], 'RV_l_high':[1, 0.5, True, [0.1, 4]], 'RV_r_high':[1, 0.5, True, [0.1, 4]], 'RV_std_high':[1, 0.5, True, [0.1,4]],
-             'beta_m':[2, 0.5, False, [1,3]], 'beta_std':[.2, .1, False, [0, 1]],
-             'EBVZL_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBVZL_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
-             'EBVZH_Tau_low':[0.11, 0.02, True, [0.08, 0.2]], 'EBVZH_Tau_high':[0.13, 0.02, True, [0.08, 0.2]],
+             'RV_m_low':[2, 0.5, True, [0.8, 4]], 'RV_l_low':[1, 0.5, True, [0.1, 4]], 'RV_r_low':[1, 0.5, True, [0.1, 4]], 'RV_std_low':[1.5, 0.5, True, [0.25,4]],
+             'RV_m_high':[2, 0.5, True, [0.8, 4]], 'RV_l_high':[1, 0.5, True, [0.1, 4]], 'RV_r_high':[1, 0.5, True, [0.1, 4]], 'RV_std_high':[1.5, 0.5, True, [0.25,4]],
+             'beta_m':[2, 0.5, False, [1,3]], 'beta_std':[.2, .07, True, [0, 1]],
+             'EBVZL_Tau_low':[0.11, 0.02, True, [0.05, 0.2]], 'EBVZL_Tau_high':[0.13, 0.02, True, [0.05, 0.2]],
+             'EBVZH_Tau_low':[0.11, 0.02, True, [0.05, 0.2]], 'EBVZH_Tau_high':[0.13, 0.02, True, [0.05, 0.2]],
              'EBV_mu_low':[], 'EBV_std_low':[], 'EBV_mu_high':[], 'EBV_std_high':[],
              'EBVZL_mu_low':[], 'EBVZL_std_low':[], 'EBVZL_mu_high':[], 'EBVZL_std_high':[],
              'EBVZH_mu_low':[], 'EBVZH_std_low':[], 'EBVZH_mu_high':[], 'EBVZH_std_high':[],
@@ -153,16 +164,17 @@ def thetawriter(theta, key, names=False): #this does the splitting that thetacon
 
 def input_cleaner(inp_params, cleandict,override): #this function takes in the input parameters and generates the walkers with appropriate dimensions, starting points, walkers, and step size 
     plist = pconv(inp_params)
+    walkfactor = 2
     for element in override.keys():  
         print(element)
         plist.remove(element)
-    pos = np.abs(0.1 * np.random.randn(len(plist)*2, len(plist)))
+    pos = np.abs(0.1 * np.random.randn(len(plist)*walkfactor, len(plist)))
     for entry in range(len(plist)):
         newpos_param = cleandict[plist[entry]]
         pos[:,entry] = np.random.normal(newpos_param[0], newpos_param[1], len(pos[:,entry]))
         if newpos_param[2]: 
             pos[:,entry] = np.abs(pos[:,entry])
-    return pos, len(plist)*2, len(plist)
+    return pos, len(plist)*walkfactor, len(plist)
     
 
 def pconv(inp_params): #converts simple input list of parameters into the expanded list that characterises the sample 
@@ -178,7 +190,7 @@ def xconv(inp_param): #gnarly but needed for plotting
     elif inp_param == 'x1':
         return np.linspace(-3,3,12)
 
-def dffixer(df, RET):
+def dffixer(df, RET, ifdata):
     cpops = []  
     rmspops = []
     
@@ -189,18 +201,21 @@ def dffixer(df, RET):
     highNEVT = dfhigh.NEVT.values
     lowrespops = dflow.MURES_SUM.values
     highrespops = dfhigh.MURES_SUM.values
-    lowRMS = dflow.MURES_SQSUM.values
-    highRMS = dfhigh.MURES_SQSUM.values
-    
+    #lowRMS = dflow.MURES_SQSUM.values
+    #highRMS = dfhigh.MURES_SQSUM.values
+
     
     for q in np.unique(df.ibin_c.values):                                       
         cpops.append(np.sum(df.loc[df.ibin_c == q].NEVT))
         
     cpops = np.array(cpops)
     
-    lowRMS = np.sqrt(lowRMS/lowNEVT - ((dflow.MURES_SUM.values/lowNEVT)**2))
-    highRMS = np.sqrt(highRMS/highNEVT - ((dfhigh.MURES_SUM.values/highNEVT)**2))
+    #lowRMS = np.sqrt(lowRMS/lowNEVT - ((dflow.MURES_SUM.values/lowNEVT)**2))
+    #highRMS = np.sqrt(highRMS/highNEVT - ((dfhigh.MURES_SUM.values/highNEVT)**2))
+    lowRMS = dflow.STD_ROBUST.values
+    highRMS = dfhigh.STD_ROBUST.values
     
+
     if RET == 'HIST':         
         return cpops 
     elif RET == 'ANALYSIS':
@@ -240,6 +255,8 @@ def LL_Creator(inparr, simbeta, simsigint, returnall_2=False): #takes a list of 
             poisson = i[0]/np.sqrt(2*inparr[-1][0])
 
         LL_c = -0.5 * np.sum((datacount - simcount) ** 2 / poisson**2)                                                                
+        if n==3: LL_c = LL_c #REMEMBERME 
+        elif n==4: LL_c = LL_c
         LL_list.append(LL_c)      
         if returnall_2:       
             datacount_list.append(datacount)   
@@ -255,10 +272,11 @@ def LL_Creator(inparr, simbeta, simsigint, returnall_2=False): #takes a list of 
     else:    
         return (LL_list), datacount_list, simcount_list, poisson_list 
 
-def pltting_func(samples, inp_params):
+def pltting_func(samples, inp_params, ndim):
     labels = pconv(inp_params)  
-    ndim = len(labels)
-    plt.clf()                               
+    for k in override.keys():
+        labels.remove(k)
+    plt.clf()
     fig, axes = plt.subplots(ndim, figsize=(10, 2*ndim), sharex=True) 
     for it in range(ndim): 
         ax = axes[it]      
@@ -291,17 +309,24 @@ def Criteria_Plotter(theta):
         print(f"LL was not returned after running log_likelihood, which is likely due to bad parameters. Will skip plotting.")
         return 
     cbins = np.linspace(-0.2,0.25, ncbins)
+    chisq = -2*chisq
     if debug: print('RESULT!', chisq, flush=True)
+#    if debug: print('RESULT!', datacount_list, simcount_list, poisson_list)
     sys.stdout.flush()
+    #chisq = chisq/6
 
+    plt.rcParams.update({"text.usetex": True,"font.size":12})
     fig, axs = plt.subplots(1, 3, figsize=(15,4))     
     ##### Colour Hist     
     ax = axs[0]  
     ax.errorbar(cbins, datacount_list[0], yerr =(poisson_list[0]), fmt='o', c='darkmagenta', label='Data') 
     ax.plot(cbins, simcount_list[0], c='dimgray',label='Simulation') 
     ax.legend()                                                                                        
-    ax.set_xlabel('c')                                                                                
+    ax.set_xlabel(r'$c$')                                                                                
     ax.set_ylabel('Count')                                   
+    thestring=r'$\chi^2_c =$ '+str(np.around(chisq[0],3))
+    ax.text(-.2,50, thestring, )
+    ax.text(-.2,450, 'a)')
     ###### MURES hi and lo                                                        
     ax = axs[1]                    
     ax.errorbar(cbins, datacount_list[1], yerr =(poisson_list[1]), fmt='^', c='k', label='Data, High Mass')
@@ -309,16 +334,26 @@ def Criteria_Plotter(theta):
     ax.errorbar(cbins, datacount_list[2], yerr =(poisson_list[2]), fmt='s', c='tab:green', label='Data, Low Mass')     
     ax.plot(cbins, simcount_list[2], c='tab:blue',label='Simulation, Low Mass') 
     ax.legend(bbox_to_anchor=[1.7,1.2], ncol=2) 
-    ax.set_xlabel('c')  
-    ax.set_ylabel('MURES')  
+    ax.set_xlabel(r'$c$')  
+    ax.set_ylabel(r'$\mu - \mu_{\rm model}$')  
+    thestring=r'High Mass $\chi^2_{\mu_{\rm res}} =$ '+str(np.around(chisq[1],3))
+    ax.text(-.2,.205, thestring, )
+    thestring=r'Low Mass $\chi^2_{\mu_{\rm res}} =$ '+str(np.around(chisq[2],3))
+    ax.text(-.2,.18, thestring, )
+    ax.text(-.2, .275, 'b)')
     ####### RMS hi and lo       
     ax = axs[2]           
     ax.errorbar(cbins, datacount_list[3], yerr =(poisson_list[3]), fmt='^', c='k', label='REAL DATA HIMASS')  
     ax.plot(cbins, simcount_list[3], c='tab:orange',label='SIMULATION HIMASS', ls='--')   
     ax.errorbar(cbins, datacount_list[4], yerr =(poisson_list[4]), fmt='s', c='tab:green', label='REAL DATA LOWMASS') 
     ax.plot(cbins, simcount_list[4], c='tab:blue',label='SIMULATION LOWMASS')    
-    ax.set_xlabel('c')      
-    ax.set_ylabel('MURES RMS')
+    ax.set_xlabel(r'$c$')      
+    ax.set_ylabel(r'$\sigma_{\rm r}$')
+    thestring=r'High Mass $\chi^2_{\sigma_{\rm r}} =$ '+str(np.around(chisq[3],3))
+    ax.text(-.2,.42, thestring, )
+    thestring=r'Low Mass $\chi^2_{\sigma_{\rm r}} =$ '+str(np.around(chisq[4],3))
+    ax.text(-.2,.395, thestring, )
+    ax.text(-.2, .48, 'c)')
     fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=.25, hspace=None)
     plt.savefig('figures/'+data_input.split('.')[0]+'overplot_observed_DATA_SIM_OVERVIEW.pdf', pad_inches=0.01, bbox_inches='tight')
     print('upload figures/overplot_observed_DATA_SIM_OVERVIEW.pdf') 
@@ -357,7 +392,8 @@ def init_connection(index,real=True,debug=False):
     if real:
         cmd = f"{JOBNAME_SALT2mu} {data_input} " \
               f"SUBPROCESS_FILES=%s,%s,%s " \
-              f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} "
+              f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
+              f"debug_flag=930"
         if debug: cmd = cmd+" SUBPROCESS_OPTMASK={OPTMASK} ";
         realdata = callSALT2mu.SALT2mu(cmd, 'NOTHING.DAT', realdataout,
                                        subprocess_log_data, realdata=True, debug=debug)
@@ -367,8 +403,8 @@ def init_connection(index,real=True,debug=False):
           f"SUBPROCESS_VARNAMES_GENPDF={GENPDF_NAMES} " \
           f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
           f"SUBPROCESS_OPTMASK={OPTMASK} " \
-          f"SUBPROCESS_SIMREF_FILE=/scratch/midway2/rkessler/PIPPIN_OUTPUT/HIGH-REDSHIFT-BOUND/1_SIM/SIMDES_4D_BS20/PIP_HIGH-REDSHIFT-BOUND_SIMDES_4D_BS20.input " 
-    
+          f"SUBPROCESS_SIMREF_FILE=/scratch/midway2/rkessler/PIPPIN_OUTPUT/HIGH-REDSHIFT-BOUND/1_SIM/SIMDES_4D_BS20/PIP_HIGH-REDSHIFT-BOUND_SIMDES_4D_BS20.input " \
+          f"debug_flag=930"
     connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim, debug=debug )
 
     if not real: #connection is an object that is equal to SUBPROCESS_SIM/DATA
@@ -473,7 +509,6 @@ xarr = np.arange(-5,5,.01)
 ##########################################################################################################################
 def log_likelihood(theta,connection=False,returnall=False,pid=0):
     print('inside loglike',flush=True)
-    print(type(theta), 'is the thing that theta is', flush=True)
     thetadict = thetaconverter(theta)
     for elem in override.keys():
         print(elem, flush=True)
@@ -523,9 +558,13 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions 
         print('got result', flush=True)
         ####AAAAAAAAA
-        if connection.maxprob > 1.001:    
-            print(connection.maxprob, 'MAXPROB parameter greater than 1! Coming up against the bounding function! Returning -np.inf to account, caught right after connection', flush=True)
-            return -np.inf 
+        try:
+            if connection.maxprob > 1.001:    
+                print(connection.maxprob, 'MAXPROB parameter greater than 1! Coming up against the bounding function! Returning -np.inf to account, caught right after connection', flush=True)
+                return -np.inf 
+        except AttributeError:
+            print("Can't find MAXPROB value. This may be a bad parameter or a fluke of some sort. Will return negative infinity")
+            return -np.inf
         #print(connection.maxprob, flush=True)
         try:
             if np.isnan(connection.beta):
@@ -548,10 +587,10 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         try: 
             bindf = connection.bindf #THIS IS THE PANDAS DATAFRAME OF THE OUTPUT FROM SALT2mu
             bindf = bindf.dropna()
-            sim_vals = dffixer(bindf, 'ANALYSIS')
+            sim_vals = dffixer(bindf, 'ANALYSIS', False)
             realbindf = realdata.bindf #same for the real data (was a global variable)
             realbindf = realbindf.dropna()
-            real_vals = dffixer(realbindf, 'ANALYSIS')
+            real_vals = dffixer(realbindf, 'ANALYSIS', True)
             resparr = []
             for lin in range(len(real_vals)):
                 resparr.append([real_vals[lin],sim_vals[lin]])
@@ -581,7 +620,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         return LL_Creator(resparr, connection.beta, connection.sigint, returnall)
     else:
         out_result = LL_Creator(resparr, connection.beta, connection.sigint)
-        print("for ", pconv(inp_params), " LL = ", theta, "we found an LL of", out_result)
+        print("for ", pconv(inp_params), " parameters = ", theta, "we found an LL of", out_result)
         sys.stdout.flush()
         return out_result
 
@@ -661,14 +700,15 @@ else:
 realbeta = realdata.beta
 realbetaerr = realdata.betaerr
 realsigint = realdata.sigint
-realsiginterr = 0.01
+#realsigint = 0.0853 #REMEMBERME 
+realsiginterr = 0.0036 #Originally 0.01, REMEMBERME
 
 
 if doplot: #add LL v step number here     
     past_results = np.load(previous_samples)            
     past_results = past_results.f.arr_0
     Criteria_Plotter(tempin)               
-    pltting_func(past_results, inp_params) 
+    pltting_func(past_results, inp_params, ndim) 
     #print("quitting after making the chains and corner.")
     tc = init_connection(299,real=False,debug=True)[1]   
     stepnum = []
@@ -767,7 +807,7 @@ if debug: ##### --debug
     for tp in range(20):
         print(f"loop {tp}")
         log_likelihood((tempin),returnall=True,connection=tc)
-    abort #deliberately switched the 0.11 (stdr) and 0.03 (stdl) to get wrong value
+    abort 
 
 
 with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in parallel on batch jobs. 
@@ -781,13 +821,13 @@ with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in pa
         sys.stdout.flush()
         #Run the sampler
         if qb == 0:
-            state = sampler.run_mcmc(pos, 100, progress=True) #There used to be a semicolon here for some reason 
+            state2 = sampler.run_mcmc(pos, 100, progress=True) #There used to be a semicolon here for some reason 
 #            pickle.dump(sampler, open( "sampler_burn.pkl", "wb" ) )
 #            print('Finished burn-in!')
 #            sampler.reset()
 #            sampler.run_mcmc(None, 100, progress=True)
         else:
-            state = sampler.run_mcmc(None, 100, progress=True)
+            state2 = sampler.run_mcmc(None, 300, progress=True)
 
         #May need to implement a proper burn-in 
         sys.stdout.flush() 
@@ -799,10 +839,9 @@ with Pool(nconn) as pool: #this is where Brodie comes in to get mc running in pa
 #        pickle.dump(sampler, open( "sampler_v1.pkl", "wb" ) )
         #print(pos, "New samples as input for next run")
 
-        print(pos[0])
-        pltting_func(samples, inp_params)                                  
-        Criteria_Plotter(pos[0])                                                                          
-                            
+        #print(pos[0], flush=True)
+        pltting_func(samples, inp_params, ndim) 
+        #Criteria_Plotter(pos[0])
 
         ### THATS IT! (below is just plotting to monitor the fitting) ##########
         ########################################################################
