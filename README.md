@@ -1,13 +1,11 @@
 # dustdriver
 
+DUST2DUST.py is the main file, which calls callSALT2mu.py when necessary.
+
+In order to run DUST2DUST.py, a configuration file is needed. IN_DUST2DUST.yaml is provided as an example input file. 
+
+
+These two things are including for using in debugging - end user should not touch them!
 `source RUNTEST_SUBPROCESS_BS20DATA` - runs SALT2mu once on the real data
 
 `source RUNTEST_SUBPROCESS_SIM` - runs interactive SALT2mu job and shows you how the python code talks to C
-
-`runparallelemcee.py` - is the code that gets submitted to the batch system which runs the mcmc and computes the likelihood
-
-`slurm.job` - job submission script
-
-Currently I have an environment called "dillon" which has `corner.py` installed... 
-to create an analogous env, run the following
-`conda env create --file dillon.yml`
