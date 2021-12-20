@@ -1,0 +1,44 @@
+### FILE LOCATIONS ###
+# DATA_INPUT is the SALT2mu file that will be used as 'data'. This can either be real data or a realistic simulation with the appropriate force_realdata flag
+# SIM_INPUT is the SALT2mu file that points to appropriate bounded functions to be reweighted.
+# OUTDIR is a custom directory to output results to, including log files.
+# CHAINS is a filepath to the npz file containing the chain output from a previous run.
+
+DATA_INPUT: /project2/rkessler/SURVEYS/DES/USERS/djbrout/dustdriver/SALT2mu_ALL_DATA.input
+SIM_INPUT:  /project2/rkessler/SURVEYS/DES/USERS/djbrout/dustdriver/SALT2mu_ALL_BOUND.input
+OUTDIR: ~
+CHAINS: ~
+
+### INPUT OPTIONS ###
+INP_PARAMS: ['c', 'RV', 'EBV', 'beta']
+PARAMSHAPESDICT: {'c': 'Gaussian', 'RV':'Gaussian', 'EBV':'Exponential', 'beta':'Gaussian'}
+SPLITDICT: {'RV': {'HOST_LOGMASS': 10 }, 'EBV': {'SIM_ZCMB': 0.1, 'HOST_LOGMASS': 10}}
+PARAMS: [-0.08827198,  0.05043889,  2.95953092,  1.19440396,  1.99422843,  0.72706128,  0.09966235,  0.10151627,  0.12812847,  0.12945593,  1.7478346,  0.27062389]
+
+# SPLITARR is the array to generate over for multi dimensional GENPDFS.
+SPLITARR: {'HOST_LOGMASS':'np.arange(5,15,.1)', 'SIM_ZCMB':'np.linspace(-2.4,2.6,3)'}
+
+
+### DEFAULTS ###
+# These should not be messed with, but are included by default in the input file.
+#CLEANDICT: Contains walker and boundary information. Walkers are initialised in Gaussian spread
+#First Entry is the mean starting location for the walker
+#Second Entry is the stdev of starting locations for the walker
+#Third Entry is whether or not the mean value of the walker needs to be true (eg for stdevs)
+#Fourth Entry 
+
+CLEANDICT:  {'c_mu':[-0.08, 0.01, False, [-0.3,-0.04]],
+             'c_std':[0.044, 0.02, True, [0.01, 0.2]],                                           
+             'x1_mu':[0,0.05, False, [-2,2]],
+             'RV_mu_HOST_LOGMASS_low':[2, 0.5, True, [0.8, 4]],
+             'RV_mu_HOST_LOGMASS_high':[2, 0.5, True, [0.8, 4]],              
+             'RV_std_HOST_LOGMASS_low':[1.0, 0.5, True, [0.25,4]],                                       
+             'RV_std_HOST_LOGMASS_high':[1.0, 0.5, True, [0.25,4]],
+             'EBV_Tau_SIM_ZCMB_low_HOST_LOGMASS_low':[0.11, 0.02, True, [0.05, 0.2]],  
+             'EBV_Tau_SIM_ZCMB_low_HOST_LOGMASS_high':[0.13, 0.02, True, [0.05, 0.2]],  
+             'EBV_Tau_SIM_ZCMB_high_HOST_LOGMASS_low':[0.11, 0.02, True, [0.05, 0.2]], 
+             'EBV_Tau_SIM_ZCMB_high_HOST_LOGMASS_high':[0.13, 0.02, True, [0.05, 0.2]],  
+             'beta_mu':[2, 0.5, False, [1,3]],
+             'beta_std':[.2, .07, True, [0, 1]],
+} 
+
