@@ -34,6 +34,7 @@ def prep_config(args, config):
     SPLITDICT = config['SPLITDICT']
     CLEANDICT = config['CLEANDICT']
     SPLITARR = config['SPLITARR']
+    SIMREF_FILE = config['SIMREF_FILE']
 
     SINGLE = args.SINGLE
     DEBUG = args.DEBUG
@@ -60,7 +61,7 @@ def prep_config(args, config):
             quit()
 
     print("Done assigning variables.")
-    return DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR
+    return DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE
     #END prep_connection
 
 def setup_logging():
@@ -173,11 +174,11 @@ def thetawriter(theta, key, names=False): #this does the splitting that thetacon
     else:               
         return (theta[lowbound:highbound]) #Returns theta in the range of first to last index for relevant parameter. For example, inp_param = ['c', 'RV'], thetawriter(theta, 'c') would give theta[0:2] which is ['c_m', 'c_std']                 
 
-def input_cleaner(INP_PARAMS, CLEANDICT, override):  #this function takes in the input parameters and generates the walkers with appropriate dimensions, starting points, walkers, and step size                         
+def input_cleaner(INP_PARAMS, CLEANDICT, override, walkfactor=2):  #this function takes in the input parameters and generates the walkers with appropriate dimensions, starting points, walkers, and step size                         
     plist = pconv(INP_PARAMS,PARAMSHAPESDICT, SPLITDICT)                                    
     for element in override.keys():                              
         plist.remove(element)                                    
-    pos = np.abs(0.1 * np.random.randn(len(plist)*2, len(plist)))
+    pos = np.abs(0.1 * np.random.randn(len(plist)*walkfactor, len(plist)))
     for entry in range(len(plist)):                              
         newpos_param = CLEANDICT[plist[entry]]                   
         pos[:,entry] = np.random.normal(newpos_param[0], newpos_param[1], len(pos[:,entry])) 
@@ -187,7 +188,7 @@ def input_cleaner(INP_PARAMS, CLEANDICT, override):  #this function takes in the
             pos[:,entry] = np.random.normal(newpos_param[0], newpos_param[1], len(pos[:,entry]))   
             if newpos_param[2]:  
                 pos[:,entry] = np.abs(pos[:,entry])              
-    return pos, len(plist)*2, len(plist)  
+    return pos, len(plist)*walkfactor, len(plist)  
     #END input_cleaner
 
 def pconv(INP_PARAMS, paramshapesdict, splitdict): #takes paramshapedict and splitdict (both are yaml inputs) and compares them to shapedict   
@@ -441,7 +442,7 @@ def init_connection(index,real=True,debug=False, cmd_data=None, cmd_sim=None):
           f"SUBPROCESS_VARNAMES_GENPDF={GENPDF_NAMES} " \
           f"SUBPROCESS_OUTPUT_TABLE={arg_outtable} " \
           f"SUBPROCESS_OPTMASK={OPTMASK} " \
-          f"SUBPROCESS_SIMREF_FILE=/scratch/midway2/rkessler/PIPPIN_OUTPUT/HIGH-REDSHIFT-BOUND/1_SIM/SIMDES_4D_BS20/PIP_HIGH-REDSHIFT-BOUND_SIMDES_4D_BS20.input " \
+          f"SUBPROCESS_SIMREF_FILE={SIMREF_FILE} " \
           f"debug_flag=930"
     if cmd_sim: cmd = cmd +" {cmd_sim}";                                                  
     connection = callSALT2mu.SALT2mu(cmd, mapsout,simdataout,subprocess_log_sim, debug=DEBUG )   
@@ -639,8 +640,8 @@ def init_connections(nwalkers):
     return "Done initialising walkers"                                               
     #END init_connections  
 
-def MCMC():  
-    with Pool(nconn) as pool: 
+def MCMC(nwalkers,ndim):  
+    with Pool(nwalkers) as pool: 
         #Instantiate the sampler once (in parallel)                                  
         sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, pool=pool)  
         for qb in range(50):                                                         
@@ -656,7 +657,7 @@ def MCMC():
             #Save the output for later                                               
             samples = sampler.get_chain()                                            
             np.savez(OUTDIR+'chains/'+DATA_INPUT.split('.')[0]+'-samples.npz',samples)    
-            pltting_func(samples, INP_PARAMS, ndim)                                  
+            #pltting_func(samples, INP_PARAMS, ndim)                                  
     return "Hi!"   
     #END MCMC
 
@@ -670,12 +671,15 @@ if __name__ == "__main__":
 #        logging.info("# ========== BEGIN DUST2DUST ===============")
     args   = get_args()
     config = load_config(args.CONFIG)
-    DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR = prep_config(args,config)
+    DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE = prep_config(args,config)
         #Run Main Code here
-    pos, nwalkers, ndim = input_cleaner(INP_PARAMS, CLEANDICT,override)
+    pos, nwalkers, ndim = input_cleaner(INP_PARAMS, CLEANDICT,override, walkfactor=3)
     realbeta, realbetaerr, realsigint, realsiginterr = init_dust2dust()
         #everything that is not the MCMC happens between here...
     if SINGLE:    
+        if len(PARAMS) != ndim:
+            print('Your input parameters are configured incorrectly, and do not match the expected number of parameters. Quitting to avoid confusion.')
+            quit()
         print('inp', PARAMS)                
         Criteria_Plotter(PARAMS)
         quit()
@@ -691,7 +695,7 @@ if __name__ == "__main__":
         #... and here.
         #Initialise the MCMC-exclusive parts of the code.
     init_connections(nwalkers)
-    MCMC()
+    MCMC(nwalkers,ndim)
     #except Exception as e:
     #    logging.exception(e)
     #    raise e
