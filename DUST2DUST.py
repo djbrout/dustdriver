@@ -43,11 +43,12 @@ def prep_config(args, config):
     DOPLOT = args.DOPLOT 
     CMD_DATA = args.CMD_DATA
     CMD_SIM = args.CMD_SIM
+    GENPDF_ONLY = args.GENPDF_ONLY
 
     if config['OUTDIR']:   
         OUTDIR = config['OUTDIR']
         if not OUTDIR.endswith('/'): OUTDIR+='/';  
-        print(f'Using custom directory {OUTDIR}!')  
+        print(f'Using custom directory {OUTDIR}!')
         if os.path.exists(OUTDIR):     
             sys.exit(f'{OUTDIR} already exists! Remove the existing path or change OUTDIR in your config file!') 
             os.mkdir(OUTDIR)     
@@ -59,9 +60,11 @@ def prep_config(args, config):
             print('chains, figures, parallel')      
             print('One or more of these does not exist. Quitting gracefully.') 
             quit()
+    else:
+        OUTDIR = os.getcwd()+'/'
 
     print("Done assigning variables.")
-    return DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE
+    return DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE, GENPDF_ONLY
     #END prep_connection
 
 def setup_logging():
@@ -110,6 +113,10 @@ def get_args():
     parser.add_argument("--CMD_SIM", help=msg,
                         type=str, default=None)
 
+    msg = 'If True, will create a simulation-appropriate GENPDF file before quitting. Does not run the full DUST2DUST.'
+    parser.add_argument("--GENPDF_ONLY", help=msg,
+                        type=bool, default=False)
+
     # parse it
     args = parser.parse_args()
     return args
@@ -145,6 +152,7 @@ shapedict = {'Gaussian':['mu', 'std'],
 
 simdict = {'c':'SIM_c', 'x1':'SIM_x1', "HOST_LOGMASS":"HOST_LOGMASS", 'Mass':'HOST_LOGMASS', 'RV':'SIM_RV', 'EBV':'SIM_EBV', 'beta':'SIM_beta', 'SIM_ZCMB': 'SIM_ZCMB',
            'EBVZ':'SIM_EBV','ZTRUE':'SIM_ZCMB', 'z':'SIM_ZCMB'} #converts inp_param into SALT2mu readable format    
+snanadict = {'SIM_c':'SALT2c', 'SIM_RV':'RV', 'HOST_LOGMASS':'LOGMASS', 'SIM_EBV':'EBV', 'SIM_ZCMB':'ZTRUE', 'SIM_beta':'SALT2BETA'}
 arrdict = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01), 'RV':np.arange(0,8,0.1), 'EBV':np.arange(0.0,1.5,.02),   
           'EBVZ':np.arange(0.0,1.5,.02)} #arrays.  
 
@@ -267,6 +275,7 @@ def dffixer(df, RET, ifdata):
     #END dffixer
 
 def LL_Creator(inparr, simbeta, simsigint, returnall_2=False): #takes a list of arrays - eg [[data_1, sim_1],[data_2, sim_2]] and gives an LL 
+    RMS_weight = 0
     if returnall_2:                                       
         datacount_list = []                               
         simcount_list = []                                
@@ -296,13 +305,14 @@ def LL_Creator(inparr, simbeta, simsigint, returnall_2=False): #takes a list of 
             simcount = i[1]                               
             poisson = i[0]/np.sqrt(2*inparr[-1][0])
         LL_c = -0.5 * np.sum((datacount - simcount) ** 2 / poisson**2)   
-        if n==3: LL_c = LL_c 
-        elif n==4: LL_c = LL_c                            
+        if n==3: LL_c = LL_c * RMS_weight
+        elif n==4: LL_c = LL_c * RMS_weight                   
         LL_list.append(LL_c)                              
         if returnall_2:                                   
             datacount_list.append(datacount)              
             simcount_list.append(simcount)                
             poisson_list.append(poisson)     
+    print('A gentle reminder that we are not weighting by RMS at present.')
     LL_list = LL_list[:-2]                                
     LL_list.append(LL_Beta)                               
     LL_list.append(LL_sigint)                             
@@ -343,13 +353,19 @@ def pltting_func(samples, INP_PARAMS, ndim):
     plt.close()                                
     #END pltting_func
 
-def Criteria_Plotter(theta):                   
+def Criteria_Plotter(theta, genpdf_only=False):                   
     tc = init_connection(299,real=False,debug=True)[1]                                              
     try:                                       
-        chisq, datacount_list, simcount_list, poisson_list = log_likelihood((theta),returnall=True,connection=tc)  
+        chisq, datacount_list, simcount_list, poisson_list = log_likelihood((theta),returnall=True,connection=tc, genpdf_only=genpdf_only)  
     except TypeError:       
-        print(f"LL was not returned after running log_likelihood, which is likely due to bad parameters. Will skip plotting.")  
-        return                                 
+        if genpdf_only:
+            #Read in and change the GENPDF filenames to be appropriate for SNANA-usage. The SUBPROCESS and SIM parameters are not the same by default.
+            print('If you did not mean to generate the GENPDF only, something has gone wrong. Otherwise this is working properly.')
+            os.rename('parallel/299_PYTHONCROSSTALK_OUT.DAT', 'GENPDF.DAT')     
+            return()
+        else:
+            print(f"LL was not returned after running log_likelihood, which is likely due to bad parameters. Will skip plotting.")  
+            return                                 
     cbins = np.linspace(-0.2,0.25, ncbins)     
     chisq = -2*chisq                           
     if DEBUG: print('RESULT!', chisq, flush=True)                                                   
@@ -400,6 +416,30 @@ def Criteria_Plotter(theta):
     plt.close()                                                        
     return 'Done'  
     #END Criteria_Plotter
+
+def subprocess_to_snana(OUTDIR, snanadict):      
+    filein = OUTDIR+'GENPDF.DAT'
+    f = open(filein,'r')        
+    lines = f.readlines()       
+    f.close()           
+    del lines[0]                
+    os.remove(filein)  
+    f = open(filein,'w+')       
+    for line in lines:          
+        f.write(line)           
+    f.close()  
+    f = open(filein, 'r')       
+    filedata = f.read()         
+    f.close()   
+    for i in snanadict.keys():  
+        if i in filedata:       
+            filedata = filedata.replace(i, snanadict[i])       
+    os.remove(filein)
+    f = open(filein,'w')       
+    f.write(filedata)           
+    f.close()     
+    return "Done"
+    #END subprocess_to_snana
 
 #=======================================================     
 ################### CONNCECTIONS #######################      
@@ -487,7 +527,7 @@ def normhisttodata(datacount,simcount):
 ################### SCIENCE FUNCTIONS ##################       
 #======================================================= 
 
-def log_likelihood(theta,connection=False,returnall=False,pid=0):               
+def log_likelihood(theta,connection=False,returnall=False,pid=0, genpdf_only=False):               
     splitEBV, stretch = True, False                                                          
     
     thetadict = thetaconverter(theta)                                           
@@ -505,6 +545,11 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0):
         print('writing 1d pdf',flush=True)                                                
         for inp in INP_PARAMS: #TODO - need to generalise to 2d functions as well         
             connection.write_generic_PDF(inp, SPLITDICT, thetawriter(theta, inp), PARAMSHAPESDICT[inp], shapedict, simdict, array_conv(inp, SPLITDICT, SPLITARR))
+            
+        if genpdf_only:
+            print('GENPDF File created. Quitting now. This is expected.')
+            return
+
         print('next',flush=True) 
         #AAAAAAAA          
         connection = connection_next(connection)# NOW RUN SALT2mu with these new distributions        
@@ -637,7 +682,8 @@ def init_connections(nwalkers):
         sys.stdout.flush()                                                           
         tc = init_connection(i,real=False,debug=DEBUG)[1] #set this back to DEBUG=DEBUG    
         connections.append(tc)                                                       
-    return "Done initialising walkers"                                               
+    print("Done initialising walkers")
+    return connections
     #END init_connections  
 
 def MCMC(nwalkers,ndim):  
@@ -671,7 +717,7 @@ if __name__ == "__main__":
 #        logging.info("# ========== BEGIN DUST2DUST ===============")
     args   = get_args()
     config = load_config(args.CONFIG)
-    DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE = prep_config(args,config)
+    DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE, GENPDF_ONLY = prep_config(args,config)
         #Run Main Code here
     pos, nwalkers, ndim = input_cleaner(INP_PARAMS, CLEANDICT,override, walkfactor=3)
     realbeta, realbetaerr, realsigint, realsiginterr = init_dust2dust()
@@ -682,6 +728,15 @@ if __name__ == "__main__":
             quit()
         print('inp', PARAMS)                
         Criteria_Plotter(PARAMS)
+        quit()
+    elif GENPDF_ONLY:
+        print('Generating GENPDF now...')
+        if len(PARAMS) != ndim:
+            print('Your input parameters are configured incorrectly, and do not match the expected number of parameters. Quitting to avoid confusion.')
+            quit()
+        print('inp', PARAMS)
+        Criteria_Plotter(PARAMS, genpdf_only=True)
+        subprocess_to_snana(OUTDIR, snanadict)
         quit()
     elif DOPLOT:
         if not CHAINS: 
@@ -694,7 +749,7 @@ if __name__ == "__main__":
         pltting_func(past_results, PARAMS, ndim)
         #... and here.
         #Initialise the MCMC-exclusive parts of the code.
-    init_connections(nwalkers)
+    connections = init_connections(nwalkers)
     MCMC(nwalkers,ndim)
     #except Exception as e:
     #    logging.exception(e)
