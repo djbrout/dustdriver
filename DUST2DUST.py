@@ -13,6 +13,7 @@ from multiprocessing import current_process
 from multiprocessing import cpu_count
 import emcee
 import time, psutil, logging, shutil, argparse, yaml, itertools
+from schwimmbad import MPIPool
 JOBNAME_SALT2mu = "SALT2mu.exe"   # public default code  
 os.environ["OMP_NUM_THREADS"] = "1"  
 ncbins = 6
@@ -34,6 +35,7 @@ def prep_config(args, config):
     SPLITDICT = config['SPLITDICT']
     CLEANDICT = config['CLEANDICT']
     SPLITARR = config['SPLITARR']
+    SPLITPARAM = config['SPLITPARAM']
     SIMREF_FILE = config['SIMREF_FILE']
 
     SINGLE = args.SINGLE
@@ -51,8 +53,8 @@ def prep_config(args, config):
         print(f'Using custom directory {OUTDIR}!')
         if os.path.exists(OUTDIR):     
             sys.exit(f'{OUTDIR} already exists! Remove the existing path or change OUTDIR in your config file!') 
-            os.mkdir(OUTDIR)     
-        subdir_list = ['chains', 'figures', 'parallel']   
+        os.mkdir(OUTDIR)     
+        subdir_list = ['chains', 'figures', 'parallel', 'logs']   
         for subdir in subdir_list:     
             os.mkdir(OUTDIR+subdir)   
         if not ((os.path.isdir(OUTDIR+'chains')) and (os.path.isdir(OUTDIR+'figures')) and (os.path.isdir(OUTDIR+'parallel'))): 
@@ -64,7 +66,7 @@ def prep_config(args, config):
         OUTDIR = os.getcwd()+'/'
 
     print("Done assigning variables.")
-    return DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE, GENPDF_ONLY
+    return DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE, GENPDF_ONLY, SPLITPARAM
     #END prep_connection
 
 def setup_logging():
@@ -150,11 +152,18 @@ shapedict = {'Gaussian':['mu', 'std'],
 #first entry is starting mean value for walkers. Second is the walker std. Third is whether or not the value needs to be positive (eg stds). Fourth is a list containing the lower and upper valid bounds for that parameter.                                
 
 
-simdict = {'c':'SIM_c', 'x1':'SIM_x1', "HOST_LOGMASS":"HOST_LOGMASS", 'Mass':'HOST_LOGMASS', 'RV':'SIM_RV', 'EBV':'SIM_EBV', 'beta':'SIM_beta', 'SIM_ZCMB': 'SIM_ZCMB',
-           'EBVZ':'SIM_EBV','ZTRUE':'SIM_ZCMB', 'z':'SIM_ZCMB'} #converts inp_param into SALT2mu readable format    
-snanadict = {'SIM_c':'SALT2c', 'SIM_RV':'RV', 'HOST_LOGMASS':'LOGMASS', 'SIM_EBV':'EBV', 'SIM_ZCMB':'ZTRUE', 'SIM_beta':'SALT2BETA'}
+simdict = {'c':'SIM_c', 'x1':'SIM_x1', 
+           "HOST_LOGMASS":"HOST_LOGMASS", 'Mass':'HOST_LOGMASS', 
+           'RV':'SIM_RV', 'EBV':'SIM_EBV', 
+           'beta':'SIM_beta', 
+           'SIM_ZCMB': 'SIM_ZCMB',
+           'EBVZ':'SIM_EBV','ZTRUE':'SIM_ZCMB', 'z':'SIM_ZCMB',
+           'HOST_COLOR':'HOST_COLOR'} #converts inp_param into SALT2mu readable format    
+snanadict = {'SIM_c':'SALT2c', 'SIM_RV':'RV', 'HOST_LOGMASS':'LOGMASS', 'SIM_EBV':'EBV', 'SIM_ZCMB':'ZTRUE', 'SIM_beta':'SALT2BETA', 'HOST_COLOR':'COLOR'}
 arrdict = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01), 'RV':np.arange(0,8,0.1), 'EBV':np.arange(0.0,1.5,.02),   
           'EBVZ':np.arange(0.0,1.5,.02)} #arrays.  
+
+splitparamdict = {'HOST_LOGMASS':'HOST_LOGMASS(2,0:20)', 'HOST_COLOR':'HOST_COLOR(2,-.5:2.5)'}
 
 override = {}
 #=======================================================
@@ -251,8 +260,8 @@ def dffixer(df, RET, ifdata):
     cpops = []                                            
     rmspops = []                                          
                                                           
-    dflow = df.loc[df.ibin_HOST_LOGMASS == 0]             
-    dfhigh = df.loc[df.ibin_HOST_LOGMASS == 1]            
+    dflow = df.loc[df[f'ibin_{SPLITPARAM}'] == 0]             
+    dfhigh = df.loc[df[f'ibin_{SPLITPARAM}'] == 1]            
                                                           
     lowNEVT = dflow.NEVT.values                           
     highNEVT = dfhigh.NEVT.values                         
@@ -275,7 +284,7 @@ def dffixer(df, RET, ifdata):
     #END dffixer
 
 def LL_Creator(inparr, simbeta, simsigint, returnall_2=False): #takes a list of arrays - eg [[data_1, sim_1],[data_2, sim_2]] and gives an LL 
-    RMS_weight = 0
+    RMS_weight = 1
     if returnall_2:                                       
         datacount_list = []                               
         simcount_list = []                                
@@ -312,7 +321,7 @@ def LL_Creator(inparr, simbeta, simsigint, returnall_2=False): #takes a list of 
             datacount_list.append(datacount)              
             simcount_list.append(simcount)                
             poisson_list.append(poisson)     
-    print('A gentle reminder that we are not weighting by RMS at present.')
+    #print('A gentle reminder that we are not weighting by RMS at present.')
     LL_list = LL_list[:-2]                                
     LL_list.append(LL_Beta)                               
     LL_list.append(LL_sigint)                             
@@ -338,7 +347,7 @@ def pltting_func(samples, INP_PARAMS, ndim):
         ax.yaxis.set_label_coords(-0.1, 0.5)   
                                                
     axes[-1].set_xlabel("step number");        
-    plt.savefig(OUTDIR+'figures/'+DATA_INPUT.split('.')[0]+'-chains.pdf', bbox_inches='tight')      
+    plt.savefig(OUTDIR+'figures/'+DATA_INPUT.split('.')[0].split('/')[-1]+'-chains.pdf', bbox_inches='tight')      
     print('upload '+OUTDIR+'figures/chains.pdf')                                                    
     plt.close()  
 
@@ -348,7 +357,7 @@ def pltting_func(samples, INP_PARAMS, ndim):
     fig = corner.corner(                       
         flat_samples, labels=labels, smooth=True                                                    
     );                                         
-    plt.savefig(OUTDIR+'figures/'+DATA_INPUT.split('.')[0]+'-corner.pdf')                           
+    plt.savefig(OUTDIR+'figures/'+DATA_INPUT.split('.')[0].split('/')[-1]+'-corner.pdf')                           
     print('upload '+OUTDIR+'figures/corner.pdf')                                                    
     plt.close()                                
     #END pltting_func
@@ -384,29 +393,29 @@ def Criteria_Plotter(theta, genpdf_only=False):
     ax.text(-.2,450, 'a)')                     
     ###### MURES hi and lo                     
     ax = axs[1]                                
-    ax.errorbar(cbins, datacount_list[1], yerr =(poisson_list[1]), fmt='^', c='k', label='Data, High Mass')   
-    ax.plot(cbins, simcount_list[1], c='tab:orange',label='Simulation, High Mass', ls='--')         
-    ax.errorbar(cbins, datacount_list[2], yerr =(poisson_list[2]), fmt='s', c='tab:green', label='Data, Low Mass')  
-    ax.plot(cbins, simcount_list[2], c='tab:blue',label='Simulation, Low Mass')                     
+    ax.errorbar(cbins, datacount_list[1], yerr =(poisson_list[1]), fmt='^', c='k', label='Data, High')   
+    ax.plot(cbins, simcount_list[1], c='tab:orange',label='Simulation, High', ls='--')         
+    ax.errorbar(cbins, datacount_list[2], yerr =(poisson_list[2]), fmt='s', c='tab:green', label='Data, Low')  
+    ax.plot(cbins, simcount_list[2], c='tab:blue',label='Simulation, Low')  
     ax.legend(bbox_to_anchor=[1.7,1.2], ncol=2)
     ax.set_xlabel(r'$c$')                      
     ax.set_ylabel(r'$\mu - \mu_{\rm model}$')  
-    thestring=r'High Mass $\chi^2_{\mu_{\rm res}} =$ '+str(np.around(chisq[1],1))                   
+    thestring=r'High $\chi^2_{\mu_{\rm res}} =$ '+str(np.around(chisq[1],1))                   
     ax.text(-.2,.205, thestring, )             
-    thestring=r'Low Mass $\chi^2_{\mu_{\rm res}} =$ '+str(np.around(chisq[2],1))                    
+    thestring=r'Low $\chi^2_{\mu_{\rm res}} =$ '+str(np.around(chisq[2],1))                    
     ax.text(-.2,.18, thestring, )              
     ax.text(-.2, .275, 'b)')     
     ####### RMS hi and lo                      
     ax = axs[2]                                
-    ax.errorbar(cbins, datacount_list[3], yerr =(poisson_list[3]), fmt='^', c='k', label='REAL DATA HIMASS')         
-    ax.plot(cbins, simcount_list[3], c='tab:orange',label='SIMULATION HIMASS', ls='--')             
-    ax.errorbar(cbins, datacount_list[4], yerr =(poisson_list[4]), fmt='s', c='tab:green', label='REAL DATA LOWMASS')  
-    ax.plot(cbins, simcount_list[4], c='tab:blue',label='SIMULATION LOWMASS')                       
+    ax.errorbar(cbins, datacount_list[3], yerr =(poisson_list[3]), fmt='^', c='k', label='REAL DATA HIGH')         
+    ax.plot(cbins, simcount_list[3], c='tab:orange',label='SIMULATION HI', ls='--')             
+    ax.errorbar(cbins, datacount_list[4], yerr =(poisson_list[4]), fmt='s', c='tab:green', label='REAL DATA LOW')  
+    ax.plot(cbins, simcount_list[4], c='tab:blue',label='SIMULATION LOW ')                       
     ax.set_xlabel(r'$c$')                      
     ax.set_ylabel(r'$\sigma_{\rm r}$')         
-    thestring=r'High Mass $\chi^2_{\sigma_{\rm r}} =$ '+str(np.around(chisq[3],1))                  
+    thestring=r'High $\chi^2_{\sigma_{\rm r}} =$ '+str(np.around(chisq[3],1))                  
     ax.text(-.2,.42, thestring, )              
-    thestring=r'Low Mass $\chi^2_{\sigma_{\rm r}} =$ '+str(np.around(chisq[4],1))                   
+    thestring=r'Low $\chi^2_{\sigma_{\rm r}} =$ '+str(np.around(chisq[4],1))                   
     ax.text(-.2,.395, thestring, )             
     ax.text(-.2, .48, 'c)')                    
     fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=.25, hspace=None)      
@@ -464,8 +473,8 @@ def init_connection(index,real=True,debug=False, cmd_data=None, cmd_sim=None):
     mapsout = f'{OUTDIR}{directory}/%d_PYTHONCROSSTALK_OUT.DAT'%index; Path(mapsout).touch()  
     subprocess_log_data = f'{OUTDIR}{directory}/%d_SUBPROCESS_LOG_DATA.STDOUT'%index; Path(subprocess_log_data).touch() 
     subprocess_log_sim = f'{OUTDIR}{directory}/%d_SUBPROCESS_LOG_SIM.STDOUT'%index; Path(subprocess_log_sim).touch()
-    arg_outtable = f"\'c(6,-0.2:0.25)*HOST_LOGMASS(2,0:20)\'"                             
-    GENPDF_NAMES = f'SIM_x1,HOST_LOGMASS,SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB,SIM_beta' 
+    arg_outtable = f"\'c(6,-0.2:0.25)*{splitparamdict[SPLITPARAM]}\'"  #need to programmatically generate the second option
+    GENPDF_NAMES = f'SIM_x1,{SPLITPARAM},SIM_c,SIM_RV,SIM_EBV,SIM_ZCMB,SIM_beta' #need to programmatically generate the split
     if real:       
         cmd = f"{JOBNAME_SALT2mu} {DATA_INPUT} " \
               f"SUBPROCESS_FILES=%s,%s,%s " \
@@ -540,6 +549,7 @@ def log_likelihood(theta,connection=False,returnall=False,pid=0, genpdf_only=Fal
         if connection == False: #For MCMC running, will pick up a connection              
             sys.stdout.flush()                                                            
             connection = connections[(current_process()._identity[0]-1)]#formerly connections[(current_process()._identity[0]-1) % len(connections)]
+            print(f'Current PID is {os.getpid()}')
             sys.stdout.flush()    
         connection = connection_prepare(connection) #cycle iteration, open SOMETHING.DAT  
         print('writing 1d pdf',flush=True)                                                
@@ -686,8 +696,8 @@ def init_connections(nwalkers):
     return connections
     #END init_connections  
 
-def MCMC(nwalkers,ndim):  
-    with Pool(nwalkers) as pool: 
+def MCMC(nwalkers,ndim, mpi):  
+    with Pool(nwalkers) as pool: #Should I be specifying the number of walkers when instancing pool?
         #Instantiate the sampler once (in parallel)                                  
         sampler = emcee.EnsembleSampler(nwalkers, ndim, log_probability, pool=pool)  
         for qb in range(50):                                                         
@@ -702,7 +712,7 @@ def MCMC(nwalkers,ndim):
             sys.stdout.flush()                                                       
             #Save the output for later                                               
             samples = sampler.get_chain()                                            
-            np.savez(OUTDIR+'chains/'+DATA_INPUT.split('.')[0]+'-samples.npz',samples)    
+            np.savez(OUTDIR+'chains/'+DATA_INPUT.split('.')[0].split('/')[-1]+'-samples.npz',samples)    
             #pltting_func(samples, INP_PARAMS, ndim)                                  
     return "Hi!"   
     #END MCMC
@@ -717,14 +727,14 @@ if __name__ == "__main__":
 #        logging.info("# ========== BEGIN DUST2DUST ===============")
     args   = get_args()
     config = load_config(args.CONFIG)
-    DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE, GENPDF_ONLY = prep_config(args,config)
+    DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE, GENPDF_ONLY, SPLITPARAM = prep_config(args,config)
         #Run Main Code here
-    pos, nwalkers, ndim = input_cleaner(INP_PARAMS, CLEANDICT,override, walkfactor=3)
+    pos, nwalkers, ndim = input_cleaner(INP_PARAMS, CLEANDICT,override, walkfactor=2)
     realbeta, realbetaerr, realsigint, realsiginterr = init_dust2dust()
         #everything that is not the MCMC happens between here...
     if SINGLE:    
         if len(PARAMS) != ndim:
-            print('Your input parameters are configured incorrectly, and do not match the expected number of parameters. Quitting to avoid confusion.')
+            print(f'Your input parameters ({len(PARAMS)}) are configured incorrectly, and do not match the expected number of parameters ({ndim}). Quitting to avoid confusion.') 
             quit()
         print('inp', PARAMS)                
         Criteria_Plotter(PARAMS)
@@ -732,7 +742,7 @@ if __name__ == "__main__":
     elif GENPDF_ONLY:
         print('Generating GENPDF now...')
         if len(PARAMS) != ndim:
-            print('Your input parameters are configured incorrectly, and do not match the expected number of parameters. Quitting to avoid confusion.')
+            print(f'Your input parameters ({len(PARAMS)}) are configured incorrectly, and do not match the expected number of parameters ({ndim}). Quitting to avoid confusion.')
             quit()
         print('inp', PARAMS)
         Criteria_Plotter(PARAMS, genpdf_only=True)
@@ -750,7 +760,7 @@ if __name__ == "__main__":
         #... and here.
         #Initialise the MCMC-exclusive parts of the code.
     connections = init_connections(nwalkers)
-    MCMC(nwalkers,ndim)
+    MCMC(nwalkers,ndim, False)
     #except Exception as e:
     #    logging.exception(e)
     #    raise e
