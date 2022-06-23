@@ -52,8 +52,9 @@ def prep_config(args, config):
         if not OUTDIR.endswith('/'): OUTDIR+='/';  
         print(f'Using custom directory {OUTDIR}!')
         if os.path.exists(OUTDIR):     
-            sys.exit(f'{OUTDIR} already exists! Remove the existing path or change OUTDIR in your config file!') 
-        os.mkdir(OUTDIR)     
+            print(f'{OUTDIR} already exists! I will not remake it then!') 
+        else:
+            os.mkdir(OUTDIR)     
         subdir_list = ['chains', 'figures', 'parallel', 'logs']   
         for subdir in subdir_list:     
             os.mkdir(OUTDIR+subdir)   
@@ -129,19 +130,23 @@ def get_args():
 # ===================================================
 #paramdict is hard coded to take the input parameters and expand into the necessary variables to properly model those     
 
+"""
 paramdict = {'c':['c_m', 'c_std'], #Default colour, shaped as a Gaussian
              'x1':['x1_m', 'x1_l', 'x1_r'], #Default stretch, an aysmmetric (skewed) Gaussian
              'EBV':['EBV_Tau_low','EBV_Tau_high'], #Default EBV split on mass, an exponential distribution
              'RV':['RV_m_low','RV_std_low', 'RV_m_high','RV_std_high'], #Default RV is split on Mass, Gaussian
              'beta':['beta_m', 'beta_std'], #Default beta, Gaussian
              'EBVZ':['EBVZL_Tau_low','EBVZL_Tau_high', 'EBVZH_Tau_low','EBVZH_Tau_high']} #EBV split on mass, z, Exponential
+"""
 
 #paramdict will be replaced with shapedict, which defines the parameters for a given distribution. Assigning shapes to a fitted parameter will be done in the yaml input.
 
 shapedict = {'Gaussian':['mu', 'std'], 
              'Skewed Gaussian':['mu', 'std_l', 'std_r'], 
              'Exponential':['Tau'], 
-             'LogNormal':['ln_mu', 'ln_std']}
+             'LogNormal':['ln_mu', 'ln_std'],
+             'Double Gaussian':['a1', 'mu1', 'std1', 'mu2', 'std2']}
+
 
 #TESTING - paramshapesdict will be part of the yaml thingy
 #paramshapesdict = {'c': 'Gaussian', 'RV':'Gaussian', 'EBV':'Exponential', 'beta':'Gaussian'}
@@ -163,7 +168,7 @@ snanadict = {'SIM_c':'SALT2c', 'SIM_RV':'RV', 'HOST_LOGMASS':'LOGMASS', 'SIM_EBV
 arrdict = {'c':np.arange(-.5,.5,.001), 'x1':np.arange(-5,5,.01), 'RV':np.arange(0,8,0.1), 'EBV':np.arange(0.0,1.5,.02),   
           'EBVZ':np.arange(0.0,1.5,.02)} #arrays.  
 
-splitparamdict = {'HOST_LOGMASS':'HOST_LOGMASS(2,0:20)', 'HOST_COLOR':'HOST_COLOR(2,-.5:2.5)'}
+splitparamdict = {'HOST_LOGMASS':'HOST_LOGMASS(2,0:20)', 'HOST_COLOR':'HOST_COLOR(2,-.5:2.5)', 'zHD':'zHD(2,0:1)'}
 
 override = {}
 #=======================================================
@@ -729,7 +734,7 @@ if __name__ == "__main__":
     config = load_config(args.CONFIG)
     DATA_INPUT, INP_PARAMS, OUTDIR, SINGLE, DEBUG, NOWEIGHT, DOPLOT, CHAINS, CMD_DATA, CMD_SIM, PARAMS, SIM_INPUT, PARAMSHAPESDICT, SPLITDICT, CLEANDICT, SPLITARR, SIMREF_FILE, GENPDF_ONLY, SPLITPARAM = prep_config(args,config)
         #Run Main Code here
-    pos, nwalkers, ndim = input_cleaner(INP_PARAMS, CLEANDICT,override, walkfactor=2)
+    pos, nwalkers, ndim = input_cleaner(INP_PARAMS, CLEANDICT,override, walkfactor=3)
     realbeta, realbetaerr, realsigint, realsiginterr = init_dust2dust()
         #everything that is not the MCMC happens between here...
     if SINGLE:    
@@ -754,7 +759,7 @@ if __name__ == "__main__":
             quit()
         print('DOPLOT option enabled. Plotting now', flush=True)
         old_chains = np.load(CHAINS)  
-        past_results = past_results.f.arr_0                              
+        past_results = old_chains.f.arr_0                              
         Criteria_Plotter(PARAMS) 
         pltting_func(past_results, PARAMS, ndim)
         #... and here.
